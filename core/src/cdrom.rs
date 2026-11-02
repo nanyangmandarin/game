@@ -154,6 +154,7 @@ pub struct CdRom {
     xa_resample: f32,
     xa_last: (i16, i16),
     track_end: u32,
+    pub stat_sectors: u32,
 }
 
 const XA_POS: [i32; 4] = [0, 60, 115, 98];
@@ -194,6 +195,7 @@ impl CdRom {
             xa_resample: 0.0,
             xa_last: (0, 0),
             track_end: 0,
+            stat_sectors: 0,
         }
     }
 
@@ -575,6 +577,7 @@ impl CdRom {
     }
 
     fn read_next_sector(&mut self) -> bool {
+        self.stat_sectors += 1;
         let loc = self.loc;
         let ok = match self.disc.as_mut() {
             Some(d) => d.read_sector(loc, &mut self.sector),
@@ -609,6 +612,7 @@ impl CdRom {
     }
 
     fn play_sector(&mut self) {
+        self.stat_sectors += 1;
         if self.track_end != 0 && self.loc >= self.track_end {
             self.playing = false;
             return;

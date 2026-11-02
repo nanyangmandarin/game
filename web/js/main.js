@@ -12,7 +12,7 @@ const $ = (s) => document.querySelector(s);
 // ---------------- settings ----------------
 const DEFAULTS = {
   speed: 1, ffSpeed: 3, pauseOnBlur: true, showFps: false,
-  renderer: 'software', aspect: '4:3', integer: false, filter: 'nearest', crt: 60, dither: true, showVram: false,
+  renderer: 'software', aspect: '4:3', integer: false, filter: 'nearest', crt: 60, frameskip: 0, dither: true, showVram: false,
   audioEnabled: true, volume: 100, latency: 100, reverb: true, interpolation: true, muteOnFF: true,
   padType: [2, 1], gamepadIndex: [0, -1], deadzone: 15, rumble: true,
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
@@ -69,7 +69,10 @@ worker.onmessage = async (e) => {
     case 'frame':
       presenter.frame(m.w, m.h, m.data);
       if (settings.showFps && lastStats) {
-        $('#overlay').textContent = `${lastStats.fps.toFixed(1)} FPS · ${Math.round(lastStats.speed)}% · ${m.w}×${m.h} · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}`;
+        const s = lastStats;
+        $('#overlay').textContent =
+          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${m.w}×${m.h} · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}\n` +
+          `emulasi ${s.emuMs.toFixed(1)} ms · render ${s.renderMs.toFixed(1)} ms · disc ${s.discMs.toFixed(1)} ms · layar ${presenter.drawMs.toFixed(1)} ms`;
       }
       break;
     case 'stats':

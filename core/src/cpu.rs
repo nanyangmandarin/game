@@ -31,6 +31,7 @@ pub struct Cpu {
     badvaddr: u32,
     cop0_misc: [u32; 16],
     pub gte: Gte,
+    pub stat_exceptions: u32,
 }
 
 impl Cpu {
@@ -53,6 +54,7 @@ impl Cpu {
             badvaddr: 0,
             cop0_misc: [0; 16],
             gte: Gte::new(),
+            stat_exceptions: 0,
         }
     }
 
@@ -93,6 +95,7 @@ impl Cpu {
     }
 
     fn exception(&mut self, code: u32) {
+        self.stat_exceptions += 1;
         let handler = if self.sr & (1 << 22) != 0 { 0xBFC0_0180 } else { 0x8000_0080 };
         let mode = self.sr & 0x3F;
         self.sr = (self.sr & !0x3F) | ((mode << 2) & 0x3F);

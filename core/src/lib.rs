@@ -237,6 +237,19 @@ impl Emulator {
         self.psx.bus.spu.interp = on;
     }
 
+    /// Per-frame counters since last call:
+    /// [gpu pixels (approx), gpu commands, cd sectors, cpu exceptions/irqs]
+    pub fn take_stats(&mut self) -> Vec<u32> {
+        let b = &mut self.psx.bus;
+        let r = vec![
+            std::mem::take(&mut b.gpu.stat_pixels) as u32,
+            std::mem::take(&mut b.gpu.stat_cmds),
+            std::mem::take(&mut b.cd.stat_sectors),
+            std::mem::take(&mut self.psx.cpu.stat_exceptions),
+        ];
+        r
+    }
+
     /// Raw VRAM (1024x512, 16-bit) for GPU-side presentation / debugging.
     pub fn vram_ptr(&self) -> *const u16 {
         self.psx.bus.gpu.vram.as_ptr()

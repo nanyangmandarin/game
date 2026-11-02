@@ -9,6 +9,7 @@ let speed = 1;           // 0 = unlimited
 let ffActive = false;
 let ffSpeed = 3;
 let fullVram = false;
+let frameskip = 0;
 let audioPort = null;
 let audioFill = 0;
 let audioEnabled = true;
@@ -21,6 +22,7 @@ let frameCount = 0;
 let statFrames = 0;
 let statStart = 0;
 let gameId = 'shared';
+const perf = { emu: 0, render: 0, disc: 0, frames: 0, presented: 0 };
 
 // ---------------- disc access (synchronous, block cached) ----------------
 const reader = new FileReaderSync();
@@ -29,6 +31,11 @@ const BLOCK = 128 * 1024;
 const cache = new Map();
 
 function readDisc(file, offset, len) {
+  const t0 = performance.now();
+  try { return readDiscInner(file, offset, len); } finally { perf.disc += performance.now() - t0; }
+}
+
+function readDiscInner(file, offset, len) {
   const f = discFiles[file];
   if (!f) return new Uint8Array(0);
   const out = new Uint8Array(len);
@@ -63,7 +70,10 @@ function fps() {
 }
 
 function runOne(present) {
+  const t0 = performance.now();
   emu.run_frame();
+  perf.emu += performance.now() - t0;
+  perf.frames++;
   frameCount++;
   statFrames++;
 
@@ -95,13 +105,17 @@ function runOne(present) {
     }
   }
 
+  if (present && frameskip > 0 && frameCount % (frameskip + 1) !== 0) present = false;
   if (present) {
+    const t1 = performance.now();
+    perf.presented++;
     if (emu.render(fullVram)) {
       const w = emu.frame_width(), h = emu.frame_height();
       const view = new Uint8Array(wasm.memory.buffer, emu.frame_ptr(), emu.frame_len());
       const copy = view.slice();
       postMessage({ type: 'frame', w, h, data: copy.buffer }, [copy.buffer]);
     }
+    perf.render += performance.now() - t1;
   }
 }
 
@@ -140,7 +154,14 @@ function loop() {
   }
   if (now - statStart >= 1000) {
     const emuFps = statFrames * 1000 / (now - statStart);
-    postMessage({ type: 'stats', fps: emuFps, speed: emuFps / fps() * 100 });
+    const n = Math.max(1, perf.frames);
+    const st = emu.take_stats();
+    postMessage({
+      type: 'stats', fps: emuFps, speed: emuFps / fps() * 100,
+      emuMs: perf.emu / n, renderMs: perf.render / Math.max(1, perf.presented), discMs: perf.disc / n,
+      pixels: st[0] / n, sectors: st[2],
+    });
+    perf.emu = perf.render = perf.disc = perf.frames = perf.presented = 0;
     statFrames = 0;
     statStart = now;
   }
@@ -168,6 +189,7 @@ function applySettings(s) {
   speed = s.speed ?? 1;
   ffSpeed = s.ffSpeed ?? 3;
   fullVram = !!s.showVram;
+  frameskip = s.frameskip ?? 0;
   audioEnabled = s.audioEnabled !== false;
   muteOnFF = s.muteOnFF !== false;
   audioTarget = Math.round(44100 * 2 * (s.latency ?? 100) / 1000);

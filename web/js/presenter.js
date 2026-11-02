@@ -46,6 +46,8 @@ export class Presenter {
     this.last = null;
     this.src = document.createElement('canvas'); // staging for 2D path
     this.srcCtx = this.src.getContext('2d');
+    this.raf = 0;
+    this.drawMs = 0;
     this.ro = new ResizeObserver(() => this.redraw());
     this.ro.observe(host);
   }
@@ -148,9 +150,17 @@ export class Presenter {
     return [Math.floor((W - w) / 2), Math.floor((H - h) / 2), w, h];
   }
 
+  /** Queue a frame; only the newest one is drawn, once per display refresh. */
   frame(w, h, buffer) {
     this.last = { w, h, data: new Uint8ClampedArray(buffer) };
-    this.draw();
+    if (!this.raf) {
+      this.raf = requestAnimationFrame(() => {
+        this.raf = 0;
+        const t = performance.now();
+        this.draw();
+        this.drawMs = this.drawMs * 0.9 + (performance.now() - t) * 0.1;
+      });
+    }
   }
 
   redraw() {

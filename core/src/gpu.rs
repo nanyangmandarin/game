@@ -109,6 +109,8 @@ pub struct Gpu {
     in_vblank: bool,
     // options
     pub opt_dither: bool,
+    pub stat_pixels: u64,
+    pub stat_cmds: u32,
 }
 
 impl Gpu {
@@ -163,6 +165,8 @@ impl Gpu {
             in_hblank: false,
             in_vblank: false,
             opt_dither: true,
+            stat_pixels: 0,
+            stat_cmds: 0,
         };
         g.reset_state();
         g
@@ -457,6 +461,7 @@ impl Gpu {
     }
 
     fn exec(&mut self) {
+        self.stat_cmds += 1;
         let c = self.cmd[0];
         let op = c >> 24;
         match op {
@@ -790,72 +795,98 @@ impl Gpu {
         if x1 > x2 || y1 > y2 {
             return;
         }
+        self.stat_pixels += ((x2 - x1 + 1) * (y2 - y1 + 1)) as u64 / 2;
 
-        // Attribute planes: f(x,y) = f0 + dfdx*(x-x0) + dfdy*(y-y0)
-        let af = area as f32;
-        let dx1 = (v1.x - v0.x) as f32;
-        let dy1 = (v1.y - v0.y) as f32;
-        let dx2 = (v2.x - v0.x) as f32;
-        let dy2 = (v2.y - v0.y) as f32;
-        let plane = |f0: i32, f1: i32, f2: i32| -> (f32, f32) {
-            let d1 = (f1 - f0) as f32;
-            let d2 = (f2 - f0) as f32;
-            ((d1 * dy2 - d2 * dy1) / af, (d2 * dx1 - d1 * dx2) / af)
+        // Attribute planes in 16.16 fixed point: f(x,y) = f0 + dfdx*(x-x0) + dfdy*(y-y0)
+        let dx1 = (v1.x - v0.x) as i64;
+        let dy1 = (v1.y - v0.y) as i64;
+        let dx2 = (v2.x - v0.x) as i64;
+        let dy2 = (v2.y - v0.y) as i64;
+        let plane = |f0: i32, f1: i32, f2: i32| -> (i64, i64) {
+            let d1 = (f1 - f0) as i64;
+            let d2 = (f2 - f0) as i64;
+            (((d1 * dy2 - d2 * dy1) << 16) / area, ((d2 * dx1 - d1 * dx2) << 16) / area)
         };
-        let (rdx, rdy) = plane(v0.r, v1.r, v2.r);
-        let (gdx, gdy) = plane(v0.g, v1.g, v2.g);
-        let (bdx, bdy) = plane(v0.b, v1.b, v2.b);
-        let (udx, udy) = plane(v0.u, v1.u, v2.u);
-        let (vdx, vdy) = plane(v0.v, v1.v, v2.v);
+        let gour = p.gouraud && !(v0.r == v1.r && v1.r == v2.r && v0.g == v1.g && v1.g == v2.g && v0.b == v1.b && v1.b == v2.b);
+        let tex = p.textured;
+        let (rdx, rdy) = if gour { plane(v0.r, v1.r, v2.r) } else { (0, 0) };
+        let (gdx, gdy) = if gour { plane(v0.g, v1.g, v2.g) } else { (0, 0) };
+        let (bdx, bdy) = if gour { plane(v0.b, v1.b, v2.b) } else { (0, 0) };
+        let (udx, udy) = if tex { plane(v0.u, v1.u, v2.u) } else { (0, 0) };
+        let (vdx, vdy) = if tex { plane(v0.v, v1.v, v2.v) } else { (0, 0) };
+        let at = |f0: i32, ddx: i64, ddy: i64, x: i32, y: i32| -> i64 {
+            ((f0 as i64) << 16) + ddx * (x - v0.x) as i64 + ddy * (y - v0.y) as i64 + 0x8000
+        };
 
-        // Edge functions with top-left fill rule.
-        let edge = |p: Vtx, q: Vtx| -> (i64, i64, i64, i64) {
-            let dx = (q.x - p.x) as i64;
-            let dy = (q.y - p.y) as i64;
+        // Edge functions with top-left fill rule: inside when e >= 0.
+        let edge = |p0: Vtx, q: Vtx| -> (i64, i64, i64) {
+            let dx = (q.x - p0.x) as i64;
+            let dy = (q.y - p0.y) as i64;
             let bias = if dy < 0 || (dy == 0 && dx > 0) { 0 } else { -1 };
-            let e0 = dx * (y1 - p.y) as i64 - dy * (x1 - p.x) as i64 + bias;
-            (e0, -dy, dx, bias)
+            (dx * (y1 - p0.y) as i64 - dy * (x1 - p0.x) as i64 + bias, -dy, dx)
         };
-        let (mut e0r, s0x, s0y, _) = edge(a, b);
-        let (mut e1r, s1x, s1y, _) = edge(b, c);
-        let (mut e2r, s2x, s2y, _) = edge(c, a);
+        let edges = [edge(a, b), edge(b, c), edge(c, a)];
+        let mut erow = [edges[0].0, edges[1].0, edges[2].0];
 
-        let ox = v0.x as f32;
-        let oy = v0.y as f32;
-        let tex_needed = p.textured;
-        let gour = p.gouraud;
+        let simple = !tex && !gour && !p.semi && !p.dither && !self.check_mask;
         for y in y1..=y2 {
-            let (mut e0, mut e1, mut e2) = (e0r, e1r, e2r);
-            let fy = y as f32 - oy;
-            for x in x1..=x2 {
-                if (e0 | e1 | e2) >= 0 {
-                    let fx = x as f32 - ox;
-                    let (r, g, b) = if gour {
-                        (
-                            (v0.r as f32 + rdx * fx + rdy * fy + 0.5) as i32,
-                            (v0.g as f32 + gdx * fx + gdy * fy + 0.5) as i32,
-                            (v0.b as f32 + bdx * fx + bdy * fy + 0.5) as i32,
-                        )
-                    } else {
-                        (v0.r, v0.g, v0.b)
-                    };
-                    let (u, v) = if tex_needed {
-                        (
-                            ((v0.u as f32 + udx * fx + udy * fy + 0.5) as i32).clamp(0, 255),
-                            ((v0.v as f32 + vdx * fx + vdy * fy + 0.5) as i32).clamp(0, 255),
-                        )
-                    } else {
-                        (0, 0)
-                    };
-                    self.shade_pixel(x, y, p, r, g, b, u, v);
+            // Solve the span [xs, xe] where all three edge functions are >= 0.
+            let mut xs = x1 as i64;
+            let mut xe = x2 as i64;
+            for k in 0..3 {
+                let e0 = erow[k];
+                let sx = edges[k].1;
+                if sx > 0 {
+                    // e0 + sx*(x-x1) >= 0  =>  x >= x1 + ceil(-e0/sx)
+                    let n = -e0;
+                    let q = if n > 0 { (n + sx - 1) / sx } else { -((-n) / sx) };
+                    xs = xs.max(x1 as i64 + q);
+                } else if sx < 0 {
+                    // x <= x1 + floor(e0 / -sx)
+                    let d = -sx;
+                    let q = if e0 >= 0 { e0 / d } else { -((-e0 + d - 1) / d) };
+                    xe = xe.min(x1 as i64 + q);
+                } else if e0 < 0 {
+                    xe = xs - 1;
                 }
-                e0 += s0x;
-                e1 += s1x;
-                e2 += s2x;
             }
-            e0r += s0y;
-            e1r += s1y;
-            e2r += s2y;
+            for k in 0..3 {
+                erow[k] += edges[k].2;
+            }
+            if xs > xe {
+                continue;
+            }
+            let (xs, xe) = (xs as i32, xe as i32);
+            if simple {
+                let col = ((v0.r >> 3) as u16) | (((v0.g >> 3) as u16) << 5) | (((v0.b >> 3) as u16) << 10)
+                    | if self.set_mask { 0x8000 } else { 0 };
+                let row = (y as usize) * VRAM_W;
+                self.vram[row + xs as usize..=row + xe as usize].fill(col);
+                continue;
+            }
+            let mut r = at(v0.r, rdx, rdy, xs, y);
+            let mut g = at(v0.g, gdx, gdy, xs, y);
+            let mut bb = at(v0.b, bdx, bdy, xs, y);
+            let mut u = at(v0.u, udx, udy, xs, y);
+            let mut v = at(v0.v, vdx, vdy, xs, y);
+            for x in xs..=xe {
+                let (cr, cg, cb) = if gour {
+                    ((r >> 16) as i32, (g >> 16) as i32, (bb >> 16) as i32)
+                } else {
+                    (v0.r, v0.g, v0.b)
+                };
+                let (tu, tv) = if tex {
+                    (((u >> 16) as i32).clamp(0, 255), ((v >> 16) as i32).clamp(0, 255))
+                } else {
+                    (0, 0)
+                };
+                self.shade_pixel(x, y, p, cr, cg, cb, tu, tv);
+                r += rdx;
+                g += gdx;
+                bb += bdx;
+                u += udx;
+                v += vdx;
+            }
         }
     }
 
