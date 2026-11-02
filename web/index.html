@@ -41,6 +41,7 @@
       <button id="btnInstall" class="hidden" title="Pasang sebagai aplikasi">📲 Install</button>
       <button id="btnLibrary" class="primary" title="Daftar game tersimpan">🎮 Game Saya</button>
       <button id="btnDisc" class="hidden" title="Ganti disc (game multi-disc)">💿 Disc</button>
+      <button id="btnCheats" disabled title="Cheat code (GameShark)">🎯 Cheat</button>
       <button id="btnStates" disabled title="Save state (F5 simpan cepat, F8 muat cepat)">💾 State</button>
       <button id="btnPause" disabled title="Pause (P)">Pause</button>
       <button id="btnReset" disabled title="Reset (F3)">Reset</button>
@@ -229,6 +230,26 @@
     </form>
   </dialog>
   <input type="file" id="fileDisc" multiple accept=".iso,.bin,.img,.cue,.chd,.pbp" hidden>
+
+  <dialog id="cheatDlg">
+    <form method="dialog" class="dlg">
+      <header>
+        <h2>Cheat Code</h2>
+        <button value="close" class="icon" aria-label="Tutup">✕</button>
+      </header>
+      <div class="panel active">
+        <p class="hint">Kode GameShark / Action Replay PS1, format <code>XXXXXXXX YYYY</code> (satu kode per baris). Disimpan per game. Cheat aktif diterapkan setiap frame.</p>
+        <ul id="cheatList" class="cheats"></ul>
+        <h3 class="sub" id="cheatFormTitle">Tambah cheat</h3>
+        <div class="cheat-form">
+          <input type="text" id="cheatName" placeholder="Nama (mis. Uang maksimal)">
+          <textarea id="cheatCode" rows="4" spellcheck="false" placeholder="8009C6E4 FFFF&#10;8009C6E6 0FFF"></textarea>
+          <p class="hint" id="cheatErr"></p>
+          <div class="actions"><button type="button" class="primary" id="cheatSave">Simpan cheat</button><button type="button" id="cheatCancel" class="hidden">Batal edit</button></div>
+        </div>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="statesDlg">
     <form method="dialog" class="dlg">

@@ -15,6 +15,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | MDEC (video FMV) | ✅ |
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
 | Jalankan BIOS tanpa disc (menu memory card / CD player) | ✅ |
+| Cheat GameShark / Action Replay (80/30, 10/11/20/21, D0–D3, E0–E3, C0, 50, C2) per game | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
 | Save state: 5 slot + quick save (F5/F8) + auto-save, dengan thumbnail | ✅ |

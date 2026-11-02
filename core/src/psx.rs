@@ -23,6 +23,8 @@ pub struct Psx {
     #[serde(skip)]
     shell_hook_done: bool,
     #[serde(skip)]
+    pub cheats: crate::cheats::Cheats,
+    #[serde(skip)]
     pub idle_cycles: u64,
 }
 
@@ -68,12 +70,17 @@ impl Psx {
         new.bus.spu.reverb_enabled = old.spu.reverb_enabled;
         new.bus.spu.interp = old.spu.interp;
         new.bios_loaded = self.bios_loaded;
+        new.fast_boot = self.fast_boot;
+        new.cheats = std::mem::take(&mut self.cheats);
+        // A state is never taken during the BIOS shell entry: keep the boot hook disarmed,
+        // otherwise game code at 0x80030000 would be hijacked.
+        new.shell_hook_done = true;
         *self = new;
         Ok(())
     }
 
     pub fn new() -> Self {
-        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false, shell_hook_done: false, idle_cycles: 0 }
+        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false, shell_hook_done: false, cheats: Default::default(), idle_cycles: 0 }
     }
 
     pub fn load_bios(&mut self, data: &[u8]) -> Result<(), String> {
@@ -169,6 +176,9 @@ impl Psx {
                     self.cpu.set_pc(ra);
                 }
             }
+        }
+        if !self.cheats.is_empty() {
+            self.cheats.apply(&mut self.bus.ram);
         }
     }
 }

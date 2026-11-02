@@ -53,7 +53,7 @@ export async function removeGame(id) {
   const list = ((await kv.get('games')) || []).filter((x) => x.id !== id);
   await kv.set('games', list);
   for (const k of await kv.keys()) {
-    if (typeof k === 'string' && k.startsWith(`state:${id}:`)) await kv.del(k);
+    if (typeof k === 'string' && (k.startsWith(`state:${id}:`) || k === `cheats:${id}`)) await kv.del(k);
   }
 }
 

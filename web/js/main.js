@@ -123,6 +123,16 @@ worker.onmessage = async (e) => {
         await putGame({ ...(await getGame(currentMeta.id)), disc: m.disc });
       }
       break;
+    case 'cheatValid': {
+      const cb = pending.get(m.id);
+      pending.delete(m.id);
+      cb && cb(m.error);
+      break;
+    }
+    case 'cheatsApplied':
+      if (m.errors) toast(m.errors, true, 7000);
+      else if (m.count) toast(`${m.count} cheat aktif`);
+      break;
     case 'stateData':
     case 'stateLoaded': {
       const cb = pending.get(m.id);
@@ -368,7 +378,8 @@ async function bootGame(meta, files, { resume = false } = {}) {
   userPaused = false;
   setPaused(false);
   showLibrary(false);
-  for (const id of ['#btnPause', '#btnReset', '#btnFF', '#btnShot', '#btnStates']) $(id).disabled = false;
+  for (const id of ['#btnPause', '#btnReset', '#btnFF', '#btnShot', '#btnStates', '#btnCheats']) $(id).disabled = false;
+  await pushCheats();
   await touchGame(gameId);
   updateTouch();
 }
@@ -532,6 +543,81 @@ $('#fileDisc').onchange = async (e) => {
     toast(err.message, true);
   }
 };
+
+// ---------------- cheats ----------------
+let cheats = [];
+let editingCheat = -1;
+const cheatKey = () => `cheats:${gameId}`;
+
+async function pushCheats(announce = false) {
+  cheats = (await kv.get(cheatKey())) || [];
+  const on = cheats.filter((c) => c.on);
+  post({ type: 'cheats', text: on.map((c) => c.code).join('\n---\n'), count: announce ? on.length : 0 });
+}
+
+function renderCheats() {
+  const ul = $('#cheatList');
+  ul.innerHTML = cheats.length ? '' : '<li class="muted">Belum ada cheat untuk game ini.</li>';
+  cheats.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<label><input type="checkbox"><span></span></label><small></small><button type="button">Ubah</button><button type="button" class="danger">Hapus</button>`;
+    const cb = li.querySelector('input');
+    cb.checked = !!c.on;
+    li.querySelector('span').textContent = c.name || `Cheat ${i + 1}`;
+    li.querySelector('small').textContent = `${c.code.trim().split('\n').length} kode`;
+    cb.onchange = async () => { c.on = cb.checked; await saveCheats(true); };
+    const [edit, del] = li.querySelectorAll('button');
+    edit.onclick = () => {
+      editingCheat = i;
+      $('#cheatName').value = c.name || '';
+      $('#cheatCode').value = c.code;
+      $('#cheatFormTitle').textContent = 'Ubah cheat';
+      $('#cheatCancel').classList.remove('hidden');
+    };
+    del.onclick = async () => {
+      if (!confirm(`Hapus cheat "${c.name || 'tanpa nama'}"?`)) return;
+      cheats.splice(i, 1);
+      await saveCheats(true);
+    };
+    ul.appendChild(li);
+  });
+}
+
+async function saveCheats(announce) {
+  await kv.set(cheatKey(), cheats);
+  await pushCheats(announce);
+  renderCheats();
+}
+
+function resetCheatForm() {
+  editingCheat = -1;
+  $('#cheatName').value = '';
+  $('#cheatCode').value = '';
+  $('#cheatErr').textContent = '';
+  $('#cheatFormTitle').textContent = 'Tambah cheat';
+  $('#cheatCancel').classList.add('hidden');
+}
+
+$('#cheatSave').onclick = async () => {
+  const code = $('#cheatCode').value.trim();
+  const err = await request({ type: 'validateCheat', text: code });
+  if (err) { $('#cheatErr').textContent = err; $('#cheatErr').className = 'hint warn'; return; }
+  const entry = { name: $('#cheatName').value.trim(), code, on: true };
+  if (editingCheat >= 0) cheats[editingCheat] = { ...cheats[editingCheat], ...entry };
+  else cheats.push(entry);
+  resetCheatForm();
+  await saveCheats(true);
+};
+$('#cheatCancel').onclick = resetCheatForm;
+$('#btnCheats').onclick = async () => {
+  cheats = (await kv.get(cheatKey())) || [];
+  resetCheatForm();
+  renderCheats();
+  if (!paused) { setPaused(true); pausedForCheats = true; }
+  $('#cheatDlg').showModal();
+};
+let pausedForCheats = false;
+$('#cheatDlg').addEventListener('close', () => { if (pausedForCheats) { pausedForCheats = false; setPaused(false); } });
 
 // ---------------- save states ----------------
 const pending = new Map();

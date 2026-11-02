@@ -2,6 +2,7 @@
 
 pub mod bus;
 pub mod cdrom;
+pub mod cheats;
 pub mod cpu;
 pub mod disc_image;
 pub mod gpu;
@@ -298,6 +299,16 @@ impl Emulator {
     }
 
     // ---------------- options ----------------
+
+    /// Active cheats (cheats separated by a `---` line). Returns errors ("" if none).
+    pub fn set_cheats(&mut self, text: &str) -> String {
+        self.psx.cheats.set(text)
+    }
+
+    /// Check one cheat's codes for the editor ("" if valid).
+    pub fn validate_cheat(&self, text: &str) -> String {
+        cheats::validate(text)
+    }
 
     pub fn set_fast_boot(&mut self, on: bool) {
         self.psx.fast_boot = on;

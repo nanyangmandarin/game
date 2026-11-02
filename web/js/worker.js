@@ -456,6 +456,14 @@ onmessage = async (e) => {
         kick();
         break;
       }
+      case 'cheats': {
+        const errors = emu.set_cheats(m.text || '');
+        postMessage({ type: 'cheatsApplied', errors, count: m.count || 0 });
+        break;
+      }
+      case 'validateCheat':
+        postMessage({ type: 'cheatValid', id: m.id, error: emu.validate_cheat(m.text) });
+        break;
       case 'reset':
         emu.reset();
         kick();
