@@ -299,6 +299,10 @@ impl Emulator {
 
     // ---------------- options ----------------
 
+    pub fn set_fast_boot(&mut self, on: bool) {
+        self.psx.fast_boot = on;
+    }
+
     pub fn set_dither(&mut self, on: bool) {
         self.psx.bus.gpu.opt_dither = on;
         if self.psx.bus.gpu.threaded {

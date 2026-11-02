@@ -39,6 +39,11 @@ pub struct Cpu {
     /// Set when the CPU is spinning in a short loop that cannot change anything by itself.
     #[serde(skip)]
     pub idle: bool,
+    /// Stop before executing this address (0 = off); `hook_hit` reports it.
+    #[serde(skip)]
+    pub hook_pc: u32,
+    #[serde(skip)]
+    pub hook_hit: bool,
     #[serde(skip)]
     loop_target: u32,
     #[serde(skip)]
@@ -73,6 +78,8 @@ impl Cpu {
             gte: Gte::new(),
             stat_exceptions: 0,
             idle: false,
+            hook_pc: 0,
+            hook_hit: false,
             loop_target: 0,
             loop_regs: [0; 32],
             loop_hilo: (0, 0),
@@ -168,6 +175,10 @@ impl Cpu {
     #[inline]
     pub fn step(&mut self, bus: &mut Bus) {
         let pc = self.pc;
+        if pc == self.hook_pc {
+            self.hook_hit = true;
+            return;
+        }
         self.current_pc = pc;
         self.delay_slot = self.branch;
         self.branch = false;

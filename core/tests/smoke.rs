@@ -250,3 +250,30 @@ fn threaded_gpu_matches_single_thread() {
     }
     assert!(be.borrow().vram() == &a.bus.gpu.vram[..], "threaded VRAM differs after state load");
 }
+
+/// With a BIOS: a queued EXE is injected at the shell entry, and fast boot skips the intro.
+#[test]
+fn bios_exe_sideload_and_fast_boot() {
+    let Ok(path) = std::env::var("PS1_BIOS") else { return };
+    let bios = std::fs::read(path).unwrap();
+    let base = 0x8001_0000u32;
+    let mut c = vec![lui(T0, 0x8000)];
+    c.push(ori(T1, 0, 0xBEEF));
+    c.push(sw(T1, 0x100, T0));
+    let here = base + (c.len() as u32) * 4;
+    c.push(j(here));
+    c.push(0);
+    let mut psx = Psx::new();
+    psx.load_bios(&bios).unwrap();
+    psx.load_exe(&build_exe(&c, base)).unwrap();
+    let mut injected_at = None;
+    for f in 0..600 {
+        psx.run_frame();
+        if u32::from_le_bytes(psx.bus.ram[0x100..0x104].try_into().unwrap()) == 0xBEEF {
+            injected_at = Some(f);
+            break;
+        }
+    }
+    println!("EXE ran after {:?} frames", injected_at);
+    assert!(injected_at.is_some(), "EXE was never injected");
+}

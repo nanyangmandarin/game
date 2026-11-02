@@ -8,14 +8,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>PS1 Web Emulator</title>
   <meta name="description" content="Emulator PlayStation 1 berbasis WebAssembly yang berjalan langsung di browser.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
   <script>
     // Cross-origin isolation via a service worker (GitHub Pages can't send COOP/COEP headers).
     // Needed for SharedArrayBuffer -> multi-threaded GPU. Reloads at most once per session.
     (function () {
-      if (window.crossOriginIsolated || !('serviceWorker' in navigator) || !window.isSecureContext) return;
-      try { if ((JSON.parse(localStorage.getItem('ps1-settings') || '{}').gpuThread) === 'off') return; } catch (e) {}
+      if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+      var wantIsolation = !window.crossOriginIsolated;
+      try { if ((JSON.parse(localStorage.getItem('ps1-settings') || '{}').gpuThread) === 'off') wantIsolation = false; } catch (e) {}
+      // Always registered (offline app); reload once only when isolation is still missing.
       navigator.serviceWorker.register('sw.js').then(function (reg) {
+        if (!wantIsolation) return;
         function reload() {
           if (sessionStorage.getItem('ps1-coi-reload')) return;
           sessionStorage.setItem('ps1-coi-reload', '1');
@@ -32,6 +38,7 @@
   <header class="bar">
     <div class="brand">PS1<span>web</span></div>
     <nav>
+      <button id="btnInstall" class="hidden" title="Pasang sebagai aplikasi">📲 Install</button>
       <button id="btnLibrary" class="primary" title="Daftar game tersimpan">🎮 Game Saya</button>
       <button id="btnDisc" class="hidden" title="Ganti disc (game multi-disc)">💿 Disc</button>
       <button id="btnStates" disabled title="Save state (F5 simpan cepat, F8 muat cepat)">💾 State</button>
@@ -67,6 +74,7 @@
         <li id="stepBios"><b>BIOS:</b> <span id="biosStatus">belum ada</span> — <button id="btnBios" class="link">pilih file BIOS</button></li>
         <li><b>Game:</b> klik <i>Tambah / Buka Game</i> atau seret file ISO, BIN+CUE, CHD, atau PBP ke sini. Game disimpan di browser, jadi tetap ada setelah refresh.</li>
       </ol>
+      <p class="muted" id="installHint"></p>
       <p class="muted">Semua berjalan di perangkat Anda (WebAssembly); tidak ada file yang diunggah ke server. BIOS (mis. SCPH-1001 / 5501 / 7502, 512 KB) harus diambil dari konsol milik Anda sendiri.</p>
     </div>
     <div id="progress" class="hidden"><span></span><div><i></i></div></div>
@@ -105,6 +113,7 @@
           </select></div>
         <div class="row"><label for="pauseOnBlur">Pause saat tab tidak aktif</label><input type="checkbox" id="pauseOnBlur" data-key="pauseOnBlur"></div>
         <div class="row"><label for="showFps">Tampilkan FPS / kecepatan</label><input type="checkbox" id="showFps" data-key="showFps"></div>
+        <div class="row"><label for="fastBoot">Boot cepat (lewati intro BIOS)</label><input type="checkbox" id="fastBoot" data-key="fastBoot"></div>
         <div class="row"><label for="gpuThread">GPU di thread terpisah (multi-core)</label>
           <select id="gpuThread" data-key="gpuThread">
             <option value="auto">Otomatis</option><option value="off">Mati</option>

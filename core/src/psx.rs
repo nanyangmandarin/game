@@ -21,6 +21,8 @@ pub struct Psx {
     pending_exe: Option<Vec<u8>>,
     pub fast_boot: bool,
     #[serde(skip)]
+    shell_hook_done: bool,
+    #[serde(skip)]
     pub idle_cycles: u64,
 }
 
@@ -71,7 +73,7 @@ impl Psx {
     }
 
     pub fn new() -> Self {
-        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false, idle_cycles: 0 }
+        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false, shell_hook_done: false, idle_cycles: 0 }
     }
 
     pub fn load_bios(&mut self, data: &[u8]) -> Result<(), String> {
@@ -84,6 +86,7 @@ impl Psx {
     }
 
     pub fn reset(&mut self) {
+        self.shell_hook_done = false;
         self.cpu.reset();
         self.bus.reset();
     }
@@ -128,6 +131,11 @@ impl Psx {
     /// Run until the next vertical blank (one video frame).
     pub fn run_frame(&mut self) {
         self.bus.frame_done = false;
+        // Arm the BIOS shell entry hook (EXE sideloading / fast boot) until it fires once.
+        let want = !self.shell_hook_done
+            && self.bios_loaded
+            && (self.pending_exe.is_some() || (self.fast_boot && self.bus.cd.disc.is_some()));
+        self.cpu.hook_pc = if want { 0x8003_0000 } else { 0 };
         // Safety budget: ~2 frames worth of cycles.
         let mut budget: i64 = 1_200_000;
         while !self.bus.frame_done && budget > 0 {
@@ -148,8 +156,18 @@ impl Psx {
                 budget -= skipped as i64;
                 self.idle_cycles += skipped as u64;
             }
-            if self.cpu.pc == 0x8003_0000 && self.pending_exe.is_some() {
-                self.inject_exe();
+            if self.cpu.hook_hit {
+                self.cpu.hook_hit = false;
+                self.cpu.hook_pc = 0;
+                self.shell_hook_done = true;
+                if self.pending_exe.is_some() {
+                    self.inject_exe();
+                } else if self.fast_boot {
+                    // Skip the BIOS shell (logo / menu): return to its caller, which goes on to
+                    // boot the disc. Same approach as PCSX's "fast boot".
+                    let ra = self.cpu.regs[31];
+                    self.cpu.set_pc(ra);
+                }
             }
         }
     }

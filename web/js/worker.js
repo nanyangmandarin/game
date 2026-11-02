@@ -307,6 +307,7 @@ function applySettings(s) {
   muteOnFF = s.muteOnFF !== false;
   audioTarget = Math.round(44100 * 2 * (s.latency ?? 100) / 1000);
   emu.set_dither(s.dither !== false);
+  emu.set_fast_boot(s.fastBoot !== false);
   emu.set_volume((s.volume ?? 100) / 100);
   emu.set_reverb(s.reverb !== false);
   emu.set_interpolation(s.interpolation !== false);

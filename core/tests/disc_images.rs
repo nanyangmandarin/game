@@ -88,3 +88,30 @@ fn bios_reads_compressed_images() {
         assert!(sectors > 0, "{name}: no sectors read");
     }
 }
+
+/// Fast boot reaches the disc boot (sector reads) much earlier than the normal intro.
+#[test]
+fn fast_boot_skips_intro() {
+    let (Ok(dir), Ok(bios)) = (std::env::var("PS1_TESTIMG_DIR"), std::env::var("PS1_BIOS")) else { return };
+    let bios = std::fs::read(bios).unwrap();
+    let dir = std::path::Path::new(&dir);
+    let first_read = |fast: bool| {
+        let (r, size) = open(&dir.join("test.pbp"));
+        let img = open_pbp(r, size, 0).unwrap();
+        let mut psx = ps1core::psx::Psx::new();
+        psx.load_bios(&bios).unwrap();
+        psx.fast_boot = fast;
+        psx.bus.cd.insert(Some(Disc::new(img.tracks, img.reader)));
+        for f in 0..1200 {
+            psx.run_frame();
+            if std::mem::take(&mut psx.bus.cd.stat_sectors) > 0 {
+                return Some(f);
+            }
+        }
+        None
+    };
+    let normal = first_read(false).expect("normal boot reads disc");
+    let fast = first_read(true).expect("fast boot reads disc");
+    println!("first disc read: normal frame {normal}, fast boot frame {fast}");
+    assert!(fast + 60 < normal, "fast boot should be clearly earlier");
+}

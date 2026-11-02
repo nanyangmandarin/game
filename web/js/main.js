@@ -22,7 +22,7 @@ const DEFAULTS = {
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
   hotkeys: { ...DEFAULT_HOTKEYS },
   cardMode: ['shared', 'shared'],
-  saveGames: true, autosave: true, gpuThread: 'auto',
+  saveGames: true, autosave: true, gpuThread: 'auto', fastBoot: true,
   touchMode: 'auto', touchOpacity: 60, touchHaptics: true, analogToDpad: true,
   touchDir: 'dpad', gestures: false, gestureOnly: false, gestureTap: 'cross', gestureTap2: 'circle',
 };
@@ -868,6 +868,26 @@ function renderHotkeys() {
     tr.append(td0, td1);
     tb.appendChild(tr);
   }
+}
+
+// ---------------- install as an app (PWA) ----------------
+let installEvt = null;
+const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvt = e;
+  $('#btnInstall').classList.remove('hidden');
+});
+$('#btnInstall').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  const r = await installEvt.userChoice.catch(() => null);
+  if (r && r.outcome === 'accepted') $('#btnInstall').classList.add('hidden');
+  installEvt = null;
+};
+window.addEventListener('appinstalled', () => { $('#btnInstall').classList.add('hidden'); toast('Aplikasi terpasang. Buka dari layar utama.'); });
+if (!standalone && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+  $('#installHint').textContent = 'Tips iPhone/iPad: ketuk Bagikan → "Tambahkan ke Layar Utama" untuk memakai emulator seperti aplikasi (layar penuh, bisa offline).';
 }
 
 // ---------------- on-screen touch controller ----------------

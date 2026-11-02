@@ -38,6 +38,12 @@ Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Di perangkat multi-
 - **Memory card:** mode per slot, daftar save (judul Shift-JIS), hapus save, impor/ekspor, format.
 - **Hotkey:** bisa diubah semua.
 
+## Pasang sebagai aplikasi
+
+- Di Chrome/Edge (PC & Android) muncul tombol **📲 Install**; di iPhone/iPad: Bagikan → *Tambahkan ke Layar Utama*.
+- Setelah terpasang, emulator terbuka seperti aplikasi (layar penuh) dan **bisa dipakai offline**; pembaruan diambil otomatis saat online.
+- **Boot cepat** (default aktif, Pengaturan → Sistem) melewati intro logo BIOS sehingga game langsung mulai (~6 detik lebih cepat).
+
 ## Tetap tersimpan setelah refresh
 
 - **Game** yang dibuka otomatis disalin ke penyimpanan browser (OPFS) dan muncul di **Game Saya**. Setelah refresh tidak perlu memilih file lagi.
