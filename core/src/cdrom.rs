@@ -210,6 +210,13 @@ impl CdRom {
         self.disc = disc;
     }
 
+    /// Report an opened lid on the next status read (disc swap).
+    pub fn open_lid(&mut self) {
+        self.shell_open = true;
+        self.reading = false;
+        self.playing = false;
+    }
+
     pub fn insert(&mut self, disc: Option<Disc>) {
         self.disc = disc;
         self.reading = false;

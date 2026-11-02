@@ -399,7 +399,10 @@ onmessage = async (e) => {
         cache.clear();
         discFiles = m.files || [];
         emu.reset();
-        if (m.tracks) {
+        let discCount = 1;
+        if (m.container) {
+          discCount = emu.insert_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
+        } else if (m.tracks) {
           emu.insert_disc(readDisc, new Uint32Array(m.tracks));
         } else {
           emu.eject();
@@ -420,7 +423,7 @@ onmessage = async (e) => {
             postMessage({ type: 'error', message: 'Gagal memuat progres: ' + (err?.message || err) });
           }
         }
-        postMessage({ type: 'booted', region: emu.disc_region(), resumed });
+        postMessage({ type: 'booted', region: emu.disc_region(), resumed, discCount });
         start();
         break;
       }
@@ -438,6 +441,17 @@ onmessage = async (e) => {
         } catch (err) {
           postMessage({ type: 'stateLoaded', id: m.id, ok: false, message: String(err?.message || err) });
         }
+        kick();
+        break;
+      }
+      case 'swapDisc': {
+        // multi-disc games: new image, the drive reports an opened lid once
+        cache.clear();
+        discFiles = m.files || [];
+        let discCount = 1;
+        if (m.container) discCount = emu.swap_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
+        else if (m.tracks) { emu.insert_disc(readDisc, new Uint32Array(m.tracks)); emu.open_lid(); }
+        postMessage({ type: 'discSwapped', region: emu.disc_region(), discCount, disc: m.disc || 0 });
         kick();
         break;
       }

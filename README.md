@@ -9,7 +9,8 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | CPU MIPS R3000A (interpreter, load/branch delay slot, exception, COP0) | ✅ |
 | GTE (koprosesor 3D, semua perintah + flag) | ✅ |
 | GPU: poligon flat/gouraud/bertekstur (4/8/15-bit, CLUT, texture window), sprite, garis, semi-transparansi, mask bit, dithering, transfer VRAM, mode 24-bit | ✅ |
-| CD-ROM: ISO, BIN/CUE (multi-track, multi-file), deteksi region, CD-DA, XA-ADPCM | ✅ |
+| CD-ROM: ISO, BIN/CUE (multi-track, multi-file), **CHD**, **PBP** (termasuk multi-disc), deteksi region, CD-DA, XA-ADPCM | ✅ |
+| Ganti disc untuk game multi-disc (PBP multi-disc atau file disc terpisah) | ✅ |
 | SPU: 24 voice ADPCM, ADSR, noise, pitch modulation, reverb, mixing CD audio | ✅ |
 | MDEC (video FMV) | ✅ |
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
@@ -18,7 +19,6 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | Timer, DMA, interrupt | ✅ |
 | Save state: 5 slot + quick save (F5/F8) + auto-save, dengan thumbnail | ✅ |
 | Game & progres tetap ada setelah refresh (OPFS + IndexedDB) | ✅ |
-| Format CHD / PBP | ⏳ berikutnya |
 | Kontrol layar sentuh (HP/tablet): multi-touch, D-pad, stik analog, haptic | ✅ |
 
 ### Renderer: dengan atau tanpa GPU
@@ -59,7 +59,11 @@ Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan →
 2. Klik **Buka Game** atau seret file ke layar:
    - `.iso` / `.bin` saja (2048 atau 2352 byte/sektor, terdeteksi otomatis), atau
    - `.cue` **bersama** semua file `.bin`-nya (pilih sekaligus), atau
+   - `.chd` (MAME/chdman: codec LZMA, Deflate, FLAC, Zstd), atau
+   - `.pbp` (EBOOT PS1 dari PSP/PS3, termasuk multi-disc), atau
    - `.exe` (PS-X EXE, untuk homebrew; bisa tanpa BIOS).
+
+   Game multi-disc: saat game meminta disc berikutnya, tekan **💿 Disc** lalu pilih disc (PBP) atau file disc berikutnya.
 
 ### Kontrol default (keyboard, Port 1)
 
@@ -88,7 +92,7 @@ Jalankan lewat server HTTP (worker module tidak jalan dari `file://`):
 cd web && python3 -m http.server 8080
 ```
 
-Test core (native):
+Test core (native). Test image CHD/PBP dibuat dengan `tools/make_test_images.py` + `chdman` (lihat workflow CI):
 
 ```bash
 cargo test --manifest-path core/Cargo.toml --release

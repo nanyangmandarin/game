@@ -28,8 +28,14 @@ jobs:
           workspaces: core
       - name: Install wasm-bindgen CLI (must match Cargo.lock)
         run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
+      - name: Test disc images (CHD via MAME chdman, PBP)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q mame-tools
+          python3 tools/make_test_images.py "$RUNNER_TEMP/imgs"
+          cd "$RUNNER_TEMP/imgs"
+          for c in cdlz cdzl cdfl; do chdman createcd -f -i test.cue -o test-$c.chd -c $c,cdzl; done
       - name: Tests
-        run: cargo test --manifest-path core/Cargo.toml --release
+        run: PS1_TESTIMG_DIR="$RUNNER_TEMP/imgs" cargo test --manifest-path core/Cargo.toml --release
       - name: Build WASM
         run: ./build.sh
       - uses: actions/upload-pages-artifact@v3

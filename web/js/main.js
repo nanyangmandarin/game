@@ -61,6 +61,8 @@ let gameId = 'shared';
 let gameTitle = '';
 let biosName = null;
 let lastStats = null;
+let discCount = 1;
+let currentDisc = 0;
 let slowSeconds = 0;
 let slowHinted = false;
 const pendingCardReq = new Map();
@@ -108,7 +110,18 @@ worker.onmessage = async (e) => {
       presenter.gotSnapshot(m.snap);
       break;
     case 'booted':
+      discCount = m.discCount || 1;
+      updateDiscButton();
       toast(`${m.resumed ? 'Melanjutkan' : 'Berjalan'}: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
+      break;
+    case 'discSwapped':
+      currentDisc = m.disc;
+      discCount = m.discCount || discCount;
+      updateDiscButton();
+      toast(`Disc ${m.disc + 1} dimasukkan`);
+      if (currentMeta && currentMeta.container === 'pbp' && (await getGame(currentMeta.id))) {
+        await putGame({ ...(await getGame(currentMeta.id)), disc: m.disc });
+      }
       break;
     case 'stateData':
     case 'stateLoaded': {
@@ -327,7 +340,10 @@ async function readCards(id) {
 }
 
 /** Start a game. `files` are File objects (picked or from OPFS). */
+let lastFiles = [];
 async function bootGame(meta, files, { resume = false } = {}) {
+  lastFiles = files;
+  currentDisc = meta.disc || 0;
   if (!ready) { toast('Emulator masih memuat…'); return; }
   if (!biosName && !meta.exe) {
     toast('Pilih BIOS dulu sebelum menjalankan game.', true, 6000);
@@ -346,7 +362,8 @@ async function bootGame(meta, files, { resume = false } = {}) {
     const rec = await kv.get(`state:${gameId}:auto`);
     if (rec) state = { data: rec.data.buffer.slice(0), gz: rec.gz };
   }
-  post({ type: 'boot', files: meta.exe ? [] : files, tracks: meta.tracks, exe, gameId, cards, state });
+  post({ type: 'boot', files: meta.exe ? [] : files, tracks: meta.tracks, container: meta.container, disc: meta.disc || 0, exe, gameId, cards, state });
+  $('#btnDisc').classList.toggle('hidden', !!meta.exe || meta.id === 'bios');
   running = true;
   userPaused = false;
   setPaused(false);
@@ -361,7 +378,7 @@ async function openGame(picked) {
   try {
     const g = await prepareGame(picked);
     const files = g.exe ? [g.exe] : g.files;
-    const meta = { id: g.id, dir: dirName(g.id), title: g.title, files: files.map((f) => f.name), tracks: g.tracks, exe: !!g.exe };
+    const meta = { id: g.id, dir: dirName(g.id), title: g.title, files: files.map((f) => f.name), tracks: g.tracks, container: g.container || null, exe: !!g.exe };
     const hasAuto = !!(await kv.get(`state:${g.id}:auto`));
     const resume = hasAuto && confirm(`Ada progres tersimpan untuk "${g.title}". Lanjutkan dari situ?\n(Batal = mulai dari awal)`);
     await bootGame(meta, files, { resume });
@@ -467,6 +484,54 @@ $('#btnBiosBoot').onclick = () => {
 $('#btnLibrary').onclick = () => showLibrary($('#welcome').classList.contains('hidden'));
 $('#btnBackToGame').onclick = () => showLibrary(false);
 $('#fileGame').onchange = (e) => { const f = Array.from(e.target.files); e.target.value = ''; if (f.length) openGame(f); };
+
+// ---------------- multi-disc ----------------
+function updateDiscButton() {
+  $('#btnDisc').textContent = discCount > 1 ? `💿 Disc ${currentDisc + 1}/${discCount}` : '💿 Disc';
+}
+
+function renderDiscs() {
+  const list = $('#discList');
+  list.innerHTML = '';
+  if (currentMeta && currentMeta.container === 'pbp' && discCount > 1) {
+    for (let d = 0; d < discCount; d++) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `Disc ${d + 1}${d === currentDisc ? ' (terpasang)' : ''}`;
+      b.className = d === currentDisc ? 'primary' : '';
+      b.onclick = () => {
+        post({ type: 'swapDisc', files: lastFiles, container: 'pbp', disc: d });
+        $('#discDlg').close();
+      };
+      list.appendChild(b);
+    }
+  } else {
+    list.innerHTML = '<p class="muted">Game ini satu disc. Untuk game multi-disc yang terdiri dari beberapa file (mis. Disc 2.chd / .cue), pilih file disc berikutnya di bawah.</p>';
+  }
+}
+
+$('#btnDisc').onclick = () => {
+  renderDiscs();
+  if (!paused) { setPaused(true); pausedForDisc = true; }
+  $('#discDlg').showModal();
+};
+let pausedForDisc = false;
+$('#discDlg').addEventListener('close', () => { if (pausedForDisc) { pausedForDisc = false; setPaused(false); } });
+$('#btnDiscFile').onclick = () => $('#fileDisc').click();
+$('#fileDisc').onchange = async (e) => {
+  const picked = Array.from(e.target.files);
+  e.target.value = '';
+  if (!picked.length) return;
+  try {
+    const g = await prepareGame(picked);
+    if (g.exe) throw new Error('Pilih file disc (ISO/BIN/CUE/CHD/PBP).');
+    lastFiles = g.files;
+    post({ type: 'swapDisc', files: g.files, tracks: g.tracks, container: g.container || null, disc: 0 });
+    $('#discDlg').close();
+  } catch (err) {
+    toast(err.message, true);
+  }
+};
 
 // ---------------- save states ----------------
 const pending = new Map();

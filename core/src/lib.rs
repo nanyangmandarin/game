@@ -3,6 +3,7 @@
 pub mod bus;
 pub mod cdrom;
 pub mod cpu;
+pub mod disc_image;
 pub mod gpu;
 pub mod gte;
 pub mod mdec;
@@ -89,6 +90,34 @@ impl Emulator {
         let disc = Disc::new(list, Box::new(JsReader { f: reader }));
         self.psx.bus.cd.insert(Some(disc));
         Ok(())
+    }
+
+    /// Insert a compressed image. `kind`: "pbp" | "chd". `size` is the file size in bytes.
+    /// For multi-disc PBP files `disc` selects the disc (0-based). Returns the disc count.
+    pub fn insert_disc_image(&mut self, reader: js_sys::Function, kind: &str, size: f64, disc: u32) -> Result<u32, JsValue> {
+        let r: Box<dyn DiscReader> = Box::new(JsReader { f: reader });
+        let img = match kind {
+            "pbp" => disc_image::open_pbp(r, size as u64, disc),
+            "chd" => disc_image::open_chd(r, size as u64),
+            _ => Err(format!("Format {kind} tidak dikenal")),
+        }
+        .map_err(|e| JsValue::from_str(&e))?;
+        let count = img.disc_count;
+        let d = Disc::new(img.tracks, img.reader);
+        self.psx.bus.cd.insert(Some(d));
+        Ok(count)
+    }
+
+    /// Swap discs (multi-disc games): the drive reports an opened lid once.
+    pub fn swap_disc_image(&mut self, reader: js_sys::Function, kind: &str, size: f64, disc: u32) -> Result<u32, JsValue> {
+        let n = self.insert_disc_image(reader, kind, size, disc)?;
+        self.psx.bus.cd.open_lid();
+        Ok(n)
+    }
+
+    /// Report an opened lid once (use after inserting a different disc).
+    pub fn open_lid(&mut self) {
+        self.psx.bus.cd.open_lid();
     }
 
     pub fn eject(&mut self) {

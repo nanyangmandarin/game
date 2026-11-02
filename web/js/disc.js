@@ -34,7 +34,12 @@ export async function prepareGame(picked) {
   const byName = new Map(picked.map((f) => [f.name.toLowerCase(), f]));
   const cue = picked.find((f) => /\.cue$/i.test(f.name));
   const exe = picked.find((f) => /\.(exe|psexe|psx)$/i.test(f.name));
-  const unsupported = picked.find((f) => /\.(chd|pbp|ecm|7z|zip|rar)$/i.test(f.name));
+  const unsupported = picked.find((f) => /\.(ecm|7z|zip|rar|ape|mds)$/i.test(f.name));
+  const packed = picked.find((f) => /\.(chd|pbp)$/i.test(f.name));
+  if (packed) {
+    const container = packed.name.split('.').pop().toLowerCase();
+    return { files: [packed], tracks: null, container, exe: null, title: packed.name.replace(/\.[^.]+$/, ''), id: idFrom(packed.name) };
+  }
 
   if (cue) {
     const text = await cue.text();
@@ -45,8 +50,8 @@ export async function prepareGame(picked) {
   }
   const img = picked.find((f) => /\.(iso|bin|img|mdf)$/i.test(f.name));
   if (!img) {
-    if (unsupported) throw new Error(`Format ${unsupported.name.split('.').pop().toUpperCase()} belum didukung. Gunakan ISO, BIN/CUE, atau EXE.`);
-    throw new Error('Pilih file ISO, BIN (+CUE), atau EXE.');
+    if (unsupported) throw new Error(`Format ${unsupported.name.split('.').pop().toUpperCase()} belum didukung. Gunakan ISO, BIN/CUE, CHD, PBP, atau EXE.`);
+    throw new Error('Pilih file ISO, BIN (+CUE), CHD, PBP, atau EXE.');
   }
   const size = await detectSectorSize(img);
   const frames = Math.floor(img.size / size);
