@@ -170,8 +170,22 @@
             <option value="auto">Otomatis (perangkat sentuh)</option><option value="on">Selalu</option><option value="off">Mati</option>
           </select></div>
         <div class="row"><label for="touchOpacity">Transparansi tombol</label><input type="range" id="touchOpacity" min="15" max="100" data-key="touchOpacity" data-num></div>
-        <div class="row"><label for="touchStick">Stik analog di layar</label><input type="checkbox" id="touchStick" data-key="touchStick"></div>
+        <div class="row"><label for="touchDir">Kontrol arah</label>
+          <select id="touchDir" data-key="touchDir">
+            <option value="dpad">D-pad (tombol silang)</option><option value="joy">Joystick</option><option value="joyfloat">Joystick mengambang (ikut jari)</option>
+          </select></div>
+        <div class="row"><label for="touchDirOutput">Joystick &amp; gestur arah dikirim sebagai</label>
+          <select id="touchDirOutput" data-key="touchDirOutput">
+            <option value="dpad">D-pad digital</option><option value="analog">Stik analog kiri</option><option value="both">Keduanya</option>
+          </select></div>
+        <div class="row"><label for="touchStick">Stik analog tambahan di layar</label><input type="checkbox" id="touchStick" data-key="touchStick"></div>
         <div class="row"><label for="touchHaptics">Getar saat tombol disentuh</label><input type="checkbox" id="touchHaptics" data-key="touchHaptics"></div>
+        <h3 class="sub">Gestur langsung di layar game</h3>
+        <div class="row"><label for="gestures">Aktifkan gestur di layar game</label><input type="checkbox" id="gestures" data-key="gestures"></div>
+        <p class="hint">Tap = tombol di bawah · Tap 2 jari = tombol kedua · Tekan &amp; tahan = menahan tombol tap · Geser &amp; tahan = arah.</p>
+        <div class="row"><label for="gestureTap">Tap 1 jari</label><select id="gestureTap" data-key="gestureTap"><option value="cross">✕ Cross</option><option value="circle">○ Circle</option><option value="square">□ Square</option><option value="triangle">△ Triangle</option><option value="start">Start</option><option value="select">Select</option><option value="l1">L1</option><option value="r1">R1</option><option value="l2">L2</option><option value="r2">R2</option></select></div>
+        <div class="row"><label for="gestureTap2">Tap 2 jari</label><select id="gestureTap2" data-key="gestureTap2"><option value="cross">✕ Cross</option><option value="circle">○ Circle</option><option value="square">□ Square</option><option value="triangle">△ Triangle</option><option value="start">Start</option><option value="select">Select</option><option value="l1">L1</option><option value="r1">R1</option><option value="l2">L2</option><option value="r2">R2</option></select></div>
+        <div class="row"><label for="gestureOnly">Sembunyikan tombol (hanya gestur, Start/Select tetap ada)</label><input type="checkbox" id="gestureOnly" data-key="gestureOnly"></div>
         <p class="hint">Klik sebuah tombol lalu tekan tombol keyboard / gamepad yang diinginkan. Esc = kosongkan.</p>
         <table class="binds" id="bindTable">
           <thead><tr><th>Tombol PS1</th><th>Keyboard</th><th>Gamepad</th></tr></thead>

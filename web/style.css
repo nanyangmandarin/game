@@ -264,3 +264,51 @@ body.touch-on #touch .tp-sys { left: 50%; transform: translateX(-50%); top: 8px;
   body.touch-on #touch .tp-mid { bottom: max(14px, env(safe-area-inset-bottom)); }
   body.touch-on #touch .tp-sys { top: calc(50% + 54px); flex-direction: column; }
 }
+
+/* ---------- direction style: joystick / floating joystick ---------- */
+#touch .tp-joy { display: none; width: var(--dpad); height: var(--dpad); }
+#touch.dir-joy .tp-joy { display: block; }
+#touch.dir-joy .tp-dpad { display: none; }
+#touch .tp-joy .ring {
+  position: absolute; left: 0; top: 0; width: var(--dpad); height: var(--dpad); border-radius: 50%;
+  background: radial-gradient(circle, rgba(40,44,54,.35) 0 55%, rgba(40,44,54,.75) 56% 100%);
+  border: 2px solid rgba(255,255,255,.35); pointer-events: none;
+}
+#touch .tp-joy .knob {
+  position: absolute; left: 28%; top: 28%; width: 44%; height: 44%; border-radius: 50%;
+  background: rgba(200,205,215,.9); box-shadow: 0 2px 8px rgba(0,0,0,.4); pointer-events: none;
+}
+/* floating: a larger touch zone; the ring jumps under the finger */
+#touch.joy-float .tp-joy { width: calc(var(--dpad) * 1.7); height: calc(var(--dpad) * 1.5); }
+#touch.joy-float .tp-joy .ring { left: 0; top: calc(var(--dpad) * .5); opacity: .55; }
+#touch.joy-float .tp-joy .ring.active { opacity: 1; }
+body.touch-on #touch .tp-joy { left: max(16px, env(safe-area-inset-left)); bottom: 20vh; }
+body.touch-on #touch.joy-float .tp-joy { left: 0; bottom: 4vh; }
+
+/* ---------- gestures directly on the game picture ---------- */
+#touch .tp-gesture { position: absolute; inset: 0; display: none; touch-action: none; }
+#touch.gestures .tp-gesture { display: block; pointer-events: auto; }
+#touch.gesture-only .tp-shoulder, #touch.gesture-only .tp-dpad, #touch.gesture-only .tp-joy,
+#touch.gesture-only .tp-face, #touch.gesture-only .tp-stick { display: none !important; }
+#touch .tp-gknob {
+  position: absolute; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); background: rgba(40,44,54,.25); pointer-events: none;
+}
+#touch .tp-gknob i {
+  position: absolute; left: 24px; top: 24px; width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(220,225,235,.85);
+}
+@media (orientation: portrait) {
+  body.touch-on #touch .tp-gesture { bottom: 50%; }
+  body.touch-on #touch .tp-joy { left: 14px; bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); }
+  body.touch-on #touch.joy-float .tp-joy { left: 0; bottom: max(40px, calc(env(safe-area-inset-bottom) + 32px)); width: 52vw; height: calc(50% - 110px); }
+  /* gesture-only: the whole lower half is free; give the picture more room */
+  body.touch-on #touch.gesture-only .tp-sys { top: auto; bottom: 64px; flex-direction: row; }
+}
+@media (orientation: portrait) {
+  /* gesture-only: picture uses almost the whole height, gestures cover it */
+  body.touch-on #stage:has(#touch.gesture-only:not(.hidden)) #screenHost { bottom: 110px; }
+  body.touch-on #touch.gesture-only .tp-gesture { bottom: 110px; }
+}
+/* on touch layouts keep notifications away from the controls */
+body.touch-on #toast { bottom: auto; top: 10px; z-index: 6; }

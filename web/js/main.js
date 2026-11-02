@@ -24,6 +24,7 @@ const DEFAULTS = {
   cardMode: ['shared', 'shared'],
   saveGames: true, autosave: true, gpuThread: 'auto',
   touchMode: 'auto', touchOpacity: 60, touchStick: false, touchHaptics: true,
+  touchDir: 'dpad', touchDirOutput: 'dpad', gestures: false, gestureOnly: false, gestureTap: 'cross', gestureTap2: 'circle',
 };
 
 function loadSettings() {
@@ -812,7 +813,11 @@ function updateTouch() {
   const want = settings.touchMode === 'on' || (settings.touchMode === 'auto' && isTouchDevice());
   const show = want && running && $('#welcome').classList.contains('hidden');
   touch.setVisible(show);
-  touch.setOptions({ opacity: settings.touchOpacity, haptics: settings.touchHaptics, stick: settings.touchStick });
+  touch.setOptions({
+    opacity: settings.touchOpacity, haptics: settings.touchHaptics, stick: settings.touchStick,
+    dir: settings.touchDir, dirOutput: settings.touchDirOutput, gestures: settings.gestures,
+    gestureOnly: settings.gestureOnly, tapButton: settings.gestureTap, tap2Button: settings.gestureTap2,
+  });
   document.body.classList.toggle('touch-on', show);
   presenter.redraw();
 }

@@ -46,7 +46,10 @@ Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Di perangkat multi-
 
 ## Di HP / tablet
 
-Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan → Kontroler). Mode potret: layar di atas, tombol di bawah. Mode lanskap: tombol di kiri-kanan gambar dan toolbar disembunyikan. Tombol ☰ ⏩ 💾 ↺ di layar untuk menu, fast-forward, quick save, dan quick load.
+Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan → Kontroler).
+
+- **Kontrol arah**: D-pad, Joystick, atau Joystick mengambang (muncul di bawah jari). Joystick bisa dikirim sebagai D-pad digital, stik analog kiri, atau keduanya.
+- **Gestur langsung di layar game**: tap = ✕, tap 2 jari = ○ (keduanya bisa diganti), tekan & tahan = menahan tombol, geser & tahan = arah. Opsi *hanya gestur* menyembunyikan tombol (Start/Select tetap ada) sehingga gambar game memenuhi layar. Mode potret: layar di atas, tombol di bawah. Mode lanskap: tombol di kiri-kanan gambar dan toolbar disembunyikan. Tombol ☰ ⏩ 💾 ↺ di layar untuk menu, fast-forward, quick save, dan quick load.
 
 ## Cara pakai
 
