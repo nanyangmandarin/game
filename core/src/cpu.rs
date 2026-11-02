@@ -113,14 +113,10 @@ impl Cpu {
         self.next_pc = handler.wrapping_add(4);
     }
 
-    /// Execute one instruction.
+    /// Check for a pending hardware/software interrupt and take it.
+    /// Called once per instruction batch (a few dozen cycles of latency).
     #[inline]
-    pub fn step(&mut self, bus: &mut Bus) {
-        let pc = self.pc;
-        self.current_pc = pc;
-        self.delay_slot = self.branch;
-        self.branch = false;
-
+    pub fn poll_irq(&mut self, bus: &mut Bus) {
         // Hardware interrupt line (IP2) mirrors I_STAT & I_MASK.
         if bus.irq_pending() {
             self.cause |= 1 << 10;
@@ -128,6 +124,10 @@ impl Cpu {
             self.cause &= !(1 << 10);
         }
         if self.sr & 1 != 0 && (self.sr & self.cause & 0xFF00) != 0 {
+            let pc = self.pc;
+            self.current_pc = pc;
+            self.delay_slot = self.branch;
+            self.branch = false;
             // Flush pending load before taking the interrupt.
             let (r, v) = self.load;
             self.regs[r] = v;
@@ -140,8 +140,16 @@ impl Cpu {
                 self.gte.command(instr);
             }
             self.exception(EXC_INT);
-            return;
         }
+    }
+
+    /// Execute one instruction.
+    #[inline]
+    pub fn step(&mut self, bus: &mut Bus) {
+        let pc = self.pc;
+        self.current_pc = pc;
+        self.delay_slot = self.branch;
+        self.branch = false;
 
         if pc & 3 != 0 {
             self.badvaddr = pc;

@@ -938,6 +938,25 @@ impl Gpu {
         let xe = (x0 + w - 1).min(self.da_x2).min(1023);
         let ys = y0.max(self.da_y1);
         let ye = (y0 + h - 1).min(self.da_y2).min(511);
+        self.stat_pixels += (w * h).max(0) as u64;
+        // Fast path: opaque sprite with unmodulated texture (the common 2D case).
+        if tex && !semi && !self.check_mask && (raw || (r == 128 && g == 128 && b == 128)) {
+            let mbit = if self.set_mask { 0x8000 } else { 0 };
+            for y in ys..=ye {
+                let dy = y - y0;
+                let tv = (if self.flip_y { v0 - dy } else { v0 + dy }) & 0xFF;
+                let row = (y as usize) * VRAM_W;
+                for x in xs..=xe {
+                    let dx = x - x0;
+                    let tu = (if self.flip_x { u0 - dx } else { u0 + dx }) & 0xFF;
+                    let t = self.tex_fetch(&p, tu, tv);
+                    if t != 0 {
+                        self.vram[row + x as usize] = (t & 0x7FFF) | mbit;
+                    }
+                }
+            }
+            return;
+        }
         for y in ys..=ye {
             let dy = y - y0;
             let tv = if self.flip_y { v0 - dy } else { v0 + dy };

@@ -151,11 +151,11 @@ impl Bus {
     pub fn fetch(&mut self, addr: u32) -> u32 {
         let a = Self::phys(addr);
         if a < 0x0080_0000 {
-            let o = (a as usize) & (RAM_SIZE - 1);
-            u32::from_le_bytes([self.ram[o], self.ram[o + 1], self.ram[o + 2], self.ram[o + 3]])
+            let o = (a as usize) & (RAM_SIZE - 4);
+            u32::from_le_bytes(self.ram[o..o + 4].try_into().unwrap())
         } else if (0x1FC0_0000..0x1FC8_0000).contains(&a) {
             let o = (a - 0x1FC0_0000) as usize;
-            u32::from_le_bytes([self.bios[o], self.bios[o + 1], self.bios[o + 2], self.bios[o + 3]])
+            u32::from_le_bytes(self.bios[o & !3..(o & !3) + 4].try_into().unwrap())
         } else {
             self.read32(addr)
         }
@@ -184,8 +184,8 @@ impl Bus {
     fn rd_slice(s: &[u8], o: usize, size: u32) -> u32 {
         match size {
             1 => s[o] as u32,
-            2 => u16::from_le_bytes([s[o], s[o + 1]]) as u32,
-            _ => u32::from_le_bytes([s[o], s[o + 1], s[o + 2], s[o + 3]]),
+            2 => u16::from_le_bytes(s[o..o + 2].try_into().unwrap()) as u32,
+            _ => u32::from_le_bytes(s[o..o + 4].try_into().unwrap()),
         }
     }
 

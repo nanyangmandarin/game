@@ -1,5 +1,8 @@
 // Emulator worker: owns the WASM core, paces frames, streams video/audio to the UI.
 import init, { Emulator } from '../pkg/ps1core.js';
+import { Painter } from './painter.js';
+
+let painter = null; // draws directly when the page transferred an OffscreenCanvas
 
 let wasm = null;
 let emu = null;
@@ -22,7 +25,7 @@ let frameCount = 0;
 let statFrames = 0;
 let statStart = 0;
 let gameId = 'shared';
-const perf = { emu: 0, render: 0, disc: 0, frames: 0, presented: 0 };
+const perf = { emu: 0, render: 0, disc: 0, frames: 0, presented: 0, lastShow: 0, late: 0, maxGap: 0 };
 
 // ---------------- disc access (synchronous, block cached) ----------------
 const reader = new FileReaderSync();
@@ -124,32 +127,54 @@ function runOne(present) {
   if (present) {
     const t1 = performance.now();
     perf.presented++;
+    // frame pacing: a presented frame arriving >1.5 frame periods after the previous one is "late"
+    if (perf.lastShow) {
+      const gap = t1 - perf.lastShow;
+      if (gap > 1500 / fps()) perf.late++;
+      if (gap > perf.maxGap) perf.maxGap = gap;
+    }
+    perf.lastShow = t1;
     if (emu.render(fullVram)) {
       const w = emu.frame_width(), h = emu.frame_height();
-      const view = new Uint8Array(wasm.memory.buffer, emu.frame_ptr(), emu.frame_len());
-      const copy = view.slice();
-      postMessage({ type: 'frame', w, h, data: copy.buffer }, [copy.buffer]);
+      const view = new Uint8ClampedArray(wasm.memory.buffer, emu.frame_ptr(), emu.frame_len());
+      if (painter) {
+        painter.frame(w, h, view);
+      } else {
+        const copy = view.slice();
+        postMessage({ type: 'frame', w, h, data: copy.buffer }, [copy.buffer]);
+      }
     }
     perf.render += performance.now() - t1;
   }
 }
 
+// Wake up on display refresh (vsync) when the worker supports requestAnimationFrame,
+// with a timer fallback (hidden tabs, older browsers). setTimeout alone is clamped to
+// >=4ms by browsers, which made frame delivery uneven.
+const hasRaf = typeof self.requestAnimationFrame === 'function';
+let rafId = 0;
+function schedule(delayMs) {
+  if (timer || rafId) return;
+  if (hasRaf) rafId = requestAnimationFrame(() => { rafId = 0; if (timer) { clearTimeout(timer); timer = null; } loop(); });
+  timer = setTimeout(() => {
+    timer = null;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    loop();
+  }, hasRaf ? Math.max(40, delayMs) : Math.max(0, delayMs));
+}
+
 function loop() {
-  timer = null;
   if (!running || paused) return;
   const now = performance.now();
   const s = ffActive ? ffSpeed : speed;
   if (s === 0) {
-    // unlimited: run as many frames as fit in ~16ms
+    // unlimited: run as many frames as fit in ~15ms, present the last one
     const until = now + 15;
     let k = 0;
-    while (performance.now() < until) {
-      runOne(false);
-      k++;
-    }
+    while (performance.now() < until) { runOne(false); k++; }
     if (k) runOne(true);
     nextFrame = performance.now();
-    timer = setTimeout(loop, 0);
+    timer = setTimeout(() => { timer = null; loop(); }, 0);
   } else {
     let frameMs = 1000 / (fps() * s);
     // gentle audio-driven correction to avoid drift/underrun at 1x
@@ -157,15 +182,18 @@ function loop() {
       if (audioFill > audioTarget * 0.75) frameMs *= 1.01;
       else if (audioFill < audioTarget * 0.25) frameMs *= 0.99;
     }
-    if (now - nextFrame > 250) nextFrame = now;
+    // Too far behind (slow device): drop the debt and slow down smoothly
+    // instead of bursting several frames and skipping on screen.
+    if (now - nextFrame > frameMs * 3) nextFrame = now;
+    const maxRun = Math.ceil(s) + 1;
     let ran = 0;
-    while (nextFrame <= now && ran < 8) {
-      const last = nextFrame + frameMs > now || ran === 7;
+    while (nextFrame <= now + 1.5 && ran < maxRun) {
+      ran++;
+      const last = nextFrame + frameMs > now + 1.5 || ran === maxRun;
       runOne(last);
       nextFrame += frameMs;
-      ran++;
     }
-    timer = setTimeout(loop, Math.max(0, nextFrame - performance.now()));
+    schedule(nextFrame - performance.now());
   }
   if (now - statStart >= 1000) {
     const emuFps = statFrames * 1000 / (now - statStart);
@@ -174,9 +202,9 @@ function loop() {
     postMessage({
       type: 'stats', fps: emuFps, speed: emuFps / fps() * 100,
       emuMs: perf.emu / n, renderMs: perf.render / Math.max(1, perf.presented), discMs: perf.disc / n,
-      pixels: st[0] / n, sectors: st[2],
+      pixels: st[0] / n, sectors: st[2], drawMs: painter ? painter.drawMs : null, late: perf.late, maxGap: perf.maxGap,
     });
-    perf.emu = perf.render = perf.disc = perf.frames = perf.presented = 0;
+    perf.emu = perf.render = perf.disc = perf.frames = perf.presented = perf.late = perf.maxGap = 0;
     statFrames = 0;
     statStart = now;
   }
@@ -188,11 +216,11 @@ function start() {
   nextFrame = performance.now();
   statStart = nextFrame;
   statFrames = 0;
-  if (!timer) loop();
+  if (!timer && !rafId) loop();
 }
 
 function kick() {
-  if (running && !paused && !timer) {
+  if (running && !paused && !timer && !rafId) {
     nextFrame = performance.now();
     loop();
   }
@@ -224,7 +252,7 @@ function applySettings(s) {
 // ---------------- messages ----------------
 onmessage = async (e) => {
   const m = e.data;
-  if (!emu && m.type !== 'init' && m.type !== 'audioPort') return;
+  if (!emu && !['init', 'audioPort', 'canvas', 'resize', 'present'].includes(m.type)) return;
   try {
     switch (m.type) {
       case 'init': {
@@ -232,6 +260,30 @@ onmessage = async (e) => {
         emu = new Emulator();
         applySettings(m.settings);
         postMessage({ type: 'ready' });
+        break;
+      }
+      case 'canvas':
+        if (m.canvas) {
+          painter = new Painter(m.canvas, m.kind);
+          if (!painter.failed) {
+            painter.setOptions(m.opts || {});
+            painter.setSize(m.w, m.h);
+          }
+          postMessage({ type: 'renderer', mode: painter.mode, failed: painter.failed });
+          if (painter.failed) painter = null;
+        } else {
+          painter = null;
+        }
+        break;
+      case 'resize':
+        if (painter) painter.setSize(m.w, m.h);
+        break;
+      case 'present':
+        if (painter) painter.setOptions(m.opts);
+        break;
+      case 'snapshot': {
+        const snap = painter ? painter.snapshot() : null;
+        postMessage({ type: 'snapshot', snap }, snap ? [snap.data.buffer] : []);
         break;
       }
       case 'audioPort':

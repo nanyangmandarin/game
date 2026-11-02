@@ -50,7 +50,8 @@ function toast(msg, err = false, ms = 3500) {
 
 // ---------------- core worker ----------------
 const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-const presenter = new Presenter($('#screenHost'));
+const presenter = new Presenter($('#screenHost'), worker);
+presenter.onModeChange = () => updateRendererHint();
 let ready = false;
 let running = false;
 let paused = false;
@@ -75,15 +76,24 @@ worker.onmessage = async (e) => {
       break;
     case 'frame':
       presenter.frame(m.w, m.h, m.data);
-      if (settings.showFps && lastStats) {
-        const s = lastStats;
+      break;
+    case 'stats': {
+      lastStats = m;
+      if (settings.showFps) {
+        const s = m;
+        const draw = s.drawMs ?? presenter.drawMs;
         $('#overlay').textContent =
-          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${m.w}×${m.h} · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}\n` +
-          `emulasi ${s.emuMs.toFixed(1)} ms · render ${s.renderMs.toFixed(1)} ms · disc ${s.discMs.toFixed(1)} ms · layar ${presenter.drawMs.toFixed(1)} ms`;
+          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}${presenter.offscreen ? ' · offscreen' : ''}\n` +
+          `emulasi ${s.emuMs.toFixed(1)} ms · render ${s.renderMs.toFixed(1)} ms · disc ${s.discMs.toFixed(1)} ms · layar ${draw.toFixed(1)} ms\n` +
+          `frame telat ${s.late}/detik · jeda terlama ${s.maxGap.toFixed(0)} ms`;
       }
       break;
-    case 'stats':
-      lastStats = m;
+    }
+    case 'renderer':
+      presenter.confirmMode(m.mode, m.failed);
+      break;
+    case 'snapshot':
+      presenter.gotSnapshot(m.snap);
       break;
     case 'booted':
       toast(`${m.resumed ? 'Melanjutkan' : 'Berjalan'}: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
@@ -450,12 +460,12 @@ function request(msg, transfer) {
   });
 }
 
-function makeThumb() {
-  const f = presenter.last;
+async function makeThumb() {
+  const f = await presenter.snapshot();
   if (!f) return null;
   const c = document.createElement('canvas');
   c.width = f.w; c.height = f.h;
-  c.getContext('2d').putImageData(new ImageData(f.data, f.w, f.h), 0, 0);
+  c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(f.data.buffer || f.data), f.w, f.h), 0, 0);
   const t = document.createElement('canvas');
   t.width = 160; t.height = 120;
   const x = t.getContext('2d');
@@ -469,7 +479,7 @@ const SLOT_NAMES = { auto: 'Otomatis', quick: 'Cepat (F5/F8)', 1: 'Slot 1', 2: '
 async function saveState(slot, { silent = false } = {}) {
   if (!running) return;
   const r = await request({ type: 'saveState' });
-  const rec = { data: new Uint8Array(r.data), gz: r.gz, thumb: makeThumb(), time: Date.now(), title: gameTitle };
+  const rec = { data: new Uint8Array(r.data), gz: r.gz, thumb: await makeThumb(), time: Date.now(), title: gameTitle };
   await kv.set(`state:${gameId}:${slot}`, rec);
   if (!silent) toast(`State disimpan: ${SLOT_NAMES[slot]}`);
   if ($('#statesDlg').open) renderStates();

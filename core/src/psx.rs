@@ -7,7 +7,8 @@ use crate::cpu::Cpu;
 
 /// Average cycles charged per instruction (approximates cache/memory stalls).
 const CYCLES_PER_INSTR: u32 = 2;
-const BATCH: u32 = 8;
+/// Instructions executed between device updates (64 cycles: low overhead, tiny IRQ latency).
+const BATCH: u32 = 32;
 
 #[derive(Serialize, Deserialize)]
 pub struct Psx {
@@ -122,6 +123,7 @@ impl Psx {
         // Safety budget: ~2 frames worth of cycles.
         let mut budget: i64 = 1_200_000;
         while !self.bus.frame_done && budget > 0 {
+            self.cpu.poll_irq(&mut self.bus);
             for _ in 0..BATCH {
                 self.cpu.step(&mut self.bus);
             }
