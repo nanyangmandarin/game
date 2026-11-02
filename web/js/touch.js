@@ -40,7 +40,7 @@ export class TouchPad {
     this.pointers = new Map(); // pointerId -> state
     this.pulses = new Map();   // button -> release time (taps)
     this.opts = {
-      haptics: true, dir: 'dpad', dirOutput: 'dpad', gestures: false, gestureOnly: false,
+      haptics: true, dir: 'dpad', gestures: false, gestureOnly: false,
       tapButton: 'cross', tap2Button: 'circle',
     };
     this.el = document.createElement('div');
@@ -53,8 +53,7 @@ export class TouchPad {
         <span class="u" data-dir="up"></span><span class="r" data-dir="right"></span>
         <span class="d" data-dir="down"></span><span class="l" data-dir="left"></span><i></i>
       </div>
-      <div class="tp tp-joy" data-joy><div class="ring"><div class="knob"></div></div></div>
-      <div class="tp tp-stick" data-stick><div class="knob"></div></div>
+      <div class="tp tp-joy" data-joy><div class="ring"><div class="knob"></div><b>ANALOG</b></div></div>
       <div class="tp tp-face">
         <button data-b="triangle" class="tri">△</button><button data-b="square" class="sq">□</button>
         <button data-b="circle" class="ci">○</button><button data-b="cross" class="cr">✕</button>
@@ -65,10 +64,10 @@ export class TouchPad {
         <button data-act="ff" title="Fast-forward (tahan)">⏩</button>
         <button data-act="save" title="Quick save">💾</button>
         <button data-act="load" title="Quick load">↺</button>
+        <button data-act="analog" class="tp-analog" title="Mode analog DualShock (seperti tombol ANALOG)">A</button>
       </div>
       <div class="tp-gknob hidden"><i></i></div>`;
     host.appendChild(this.el);
-    this.stickKnob = this.el.querySelector('.tp-stick .knob');
     this.joy = this.el.querySelector('.tp-joy');
     this.joyRing = this.el.querySelector('.tp-joy .ring');
     this.joyKnob = this.el.querySelector('.tp-joy .knob');
@@ -88,9 +87,9 @@ export class TouchPad {
   setOptions(o) {
     Object.assign(this.opts, o);
     this.el.style.setProperty('--tp-opacity', String((o.opacity ?? 60) / 100));
-    this.el.classList.toggle('with-stick', !!o.stick);
     this.el.classList.toggle('dir-joy', this.opts.dir !== 'dpad');
-    this.el.classList.toggle('joy-float', this.opts.dir === 'joyfloat');
+    this.el.classList.toggle('joy-float', this.opts.dir.endsWith('float'));
+    this.el.classList.toggle('joy-analog', this.opts.dir.startsWith('analog'));
     this.el.classList.toggle('gestures', !!this.opts.gestures);
     this.el.classList.toggle('gesture-only', !!this.opts.gestures && !!this.opts.gestureOnly);
     this.resetJoy();
@@ -101,7 +100,7 @@ export class TouchPad {
   }
 
   target(e) {
-    return e.target.closest('[data-b],[data-dpad],[data-stick],[data-joy],[data-act],[data-gesture]');
+    return e.target.closest('[data-b],[data-dpad],[data-joy],[data-act],[data-gesture]');
   }
 
   down(e) {
@@ -123,13 +122,9 @@ export class TouchPad {
       this.updateDpad(p, e);
     } else if (t.dataset.joy !== undefined) {
       const p = { kind: 'joy', el: t, dirs: [], x: 0, y: 0 };
-      if (this.opts.dir === 'joyfloat') this.placeJoy(e);
+      if (this.opts.dir.endsWith('float')) this.placeJoy(e);
       this.pointers.set(e.pointerId, p);
       this.updateJoy(p, e);
-    } else if (t.dataset.stick !== undefined) {
-      const p = { kind: 'stick', el: t, x: 0, y: 0 };
-      this.pointers.set(e.pointerId, p);
-      this.updateStick(p, e);
     } else {
       this.pointers.set(e.pointerId, { kind: 'btn', name: t.dataset.b, el: t });
     }
@@ -143,7 +138,6 @@ export class TouchPad {
     e.preventDefault();
     if (p.kind === 'dpad') this.updateDpad(p, e);
     else if (p.kind === 'joy') this.updateJoy(p, e);
-    else if (p.kind === 'stick') this.updateStick(p, e);
     else if (p.kind === 'gesture') this.gestureMove(p, e);
     else if (p.kind === 'btn') {
       // allow sliding a finger across face/shoulder buttons
@@ -168,7 +162,6 @@ export class TouchPad {
       return;
     }
     if (p.kind === 'gesture') this.gestureUp(p, e);
-    if (p.kind === 'stick') this.stickKnob.style.transform = '';
     if (p.kind === 'joy') this.resetJoy();
     this.emit();
   }
@@ -216,18 +209,6 @@ export class TouchPad {
     if (dirs.some((d) => !p.dirs.includes(d))) this.buzz();
     p.dirs = dirs;
     this.joyKnob.style.transform = `translate(${x * rad * 0.55}px, ${y * rad * 0.55}px)`;
-  }
-
-  updateStick(p, e) {
-    const r = p.el.getBoundingClientRect();
-    const rad = r.width / 2;
-    let dx = (e.clientX - (r.left + rad)) / rad;
-    let dy = (e.clientY - (r.top + rad)) / rad;
-    const m = Math.hypot(dx, dy);
-    if (m > 1) { dx /= m; dy /= m; }
-    p.x = dx;
-    p.y = dy;
-    this.stickKnob.style.transform = `translate(${dx * rad * 0.6}px, ${dy * rad * 0.6}px)`;
   }
 
   // ---------------- gestures on the game picture ----------------
@@ -300,6 +281,11 @@ export class TouchPad {
     setTimeout(() => this.emit(), PULSE_MS + 5);
   }
 
+  /** Light the ANALOG button like the LED on a real DualShock. */
+  setAnalogLed(on) {
+    this.el.querySelector('.tp-analog')?.classList.toggle('lit', !!on);
+  }
+
   // ---------------- output ----------------
 
   emit() {
@@ -307,7 +293,8 @@ export class TouchPad {
     let lx = 0, ly = 0;
     const now = performance.now();
     this.el.querySelectorAll('.on').forEach((x) => { if (!x.dataset.act) x.classList.remove('on'); });
-    const out = this.opts.dirOutput;
+    // analog styles send the left analog stick; D-pad/joystick styles send digital directions
+    const out = this.opts.dir.startsWith('analog') ? 'analog' : 'dpad';
     const addDir = (p) => {
       if (out !== 'analog') for (const d of p.dirs) buttons |= BIT[d];
       if (out !== 'dpad') { lx += p.x; ly += p.y; }
@@ -316,7 +303,6 @@ export class TouchPad {
       if (p.kind === 'btn') { buttons |= BIT[p.name]; p.el.classList.add('on'); }
       if (p.kind === 'dpad') for (const d of p.dirs) { buttons |= BIT[d]; p.el.querySelector(`[data-dir=${d}]`).classList.add('on'); }
       if (p.kind === 'joy') addDir(p);
-      if (p.kind === 'stick') { lx += p.x; ly += p.y; }
       if (p.kind === 'gesture') {
         if (p.moved) addDir(p);
         if (p.hold) buttons |= BIT[this.opts.tapButton] || 0;

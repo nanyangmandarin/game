@@ -23,8 +23,8 @@ const DEFAULTS = {
   hotkeys: { ...DEFAULT_HOTKEYS },
   cardMode: ['shared', 'shared'],
   saveGames: true, autosave: true, gpuThread: 'auto',
-  touchMode: 'auto', touchOpacity: 60, touchStick: false, touchHaptics: true,
-  touchDir: 'dpad', touchDirOutput: 'dpad', gestures: false, gestureOnly: false, gestureTap: 'cross', gestureTap2: 'circle',
+  touchMode: 'auto', touchOpacity: 60, touchHaptics: true, analogToDpad: true,
+  touchDir: 'dpad', gestures: false, gestureOnly: false, gestureTap: 'cross', gestureTap2: 'circle',
 };
 
 function loadSettings() {
@@ -84,6 +84,7 @@ worker.onmessage = async (e) => {
       break;
     case 'stats': {
       lastStats = m;
+      if (m.analog) touch.setAnalogLed(m.analog[0]);
       // Suggest frameskip once if the device stays below full speed.
       slowSeconds = running && !paused && m.speed < 92 && settings.speed === 1 ? slowSeconds + 1 : 0;
       if (slowSeconds === 6 && !slowHinted && !settings.frameskip) {
@@ -129,6 +130,7 @@ worker.onmessage = async (e) => {
       input.rumble(m.port, m.small, m.large);
       break;
     case 'analog':
+      if (m.port === 0) touch.setAnalogLed(m.on);
       toast(`Port ${m.port + 1}: mode ${m.on ? 'ANALOG' : 'DIGITAL'}`);
       break;
     case 'error':
@@ -458,6 +460,10 @@ function showLibrary(show) {
 let pausedForLibrary = false;
 
 $('#btnOpen').onclick = () => $('#fileGame').click();
+$('#btnBiosBoot').onclick = () => {
+  if (!biosName) { toast('Pilih BIOS dulu.', true); return; }
+  bootGame({ id: 'bios', title: 'BIOS', files: [], tracks: null, exe: false }, []);
+};
 $('#btnLibrary').onclick = () => showLibrary($('#welcome').classList.contains('hidden'));
 $('#btnBackToGame').onclick = () => showLibrary(false);
 $('#fileGame').onchange = (e) => { const f = Array.from(e.target.files); e.target.value = ''; if (f.length) openGame(f); };
@@ -805,6 +811,7 @@ const touch = new TouchPad($('#stage'), (st) => input.setTouch(st), (action, dow
     case 'ff': if (running) post({ type: 'ff', on: down || ffLatched }); break;
     case 'menu': if (down) openSettings(); break;
     case 'save': if (down) saveState('quick'); break;
+    case 'analog': if (down) post({ type: 'analogToggle', port: 0 }); break;
     case 'load': if (down) loadState('quick'); break;
   }
 });
@@ -814,8 +821,8 @@ function updateTouch() {
   const show = want && running && $('#welcome').classList.contains('hidden');
   touch.setVisible(show);
   touch.setOptions({
-    opacity: settings.touchOpacity, haptics: settings.touchHaptics, stick: settings.touchStick,
-    dir: settings.touchDir, dirOutput: settings.touchDirOutput, gestures: settings.gestures,
+    opacity: settings.touchOpacity, haptics: settings.touchHaptics,
+    dir: settings.touchDir, gestures: settings.gestures,
     gestureOnly: settings.gestureOnly, tapButton: settings.gestureTap, tap2Button: settings.gestureTap2,
   });
   document.body.classList.toggle('touch-on', show);

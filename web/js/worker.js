@@ -60,6 +60,7 @@ let ffActive = false;
 let ffSpeed = 3;
 let fullVram = false;
 let frameskip = 0;
+let analogToDpad = true;
 let audioPort = null;
 let audioFill = 0;
 let audioEnabled = true;
@@ -268,7 +269,8 @@ function loop() {
     postMessage({
       type: 'stats', fps: emuFps, speed: emuFps / fps() * 100,
       emuMs: perf.emu / n, renderMs: perf.render / Math.max(1, perf.presented), discMs: perf.disc / n,
-      pixels: st[0] / n, sectors: st[2], drawMs: gpuWorker ? gpuDrawMs : painter ? painter.drawMs : null, threaded: !!gpuWorker, late: perf.late, maxGap: perf.maxGap,
+      pixels: st[0] / n, sectors: st[2], drawMs: gpuWorker ? gpuDrawMs : painter ? painter.drawMs : null, threaded: !!gpuWorker,
+      analog: [emu.analog_mode(0), emu.analog_mode(1)], late: perf.late, maxGap: perf.maxGap,
     });
     perf.emu = perf.render = perf.disc = perf.frames = perf.presented = perf.late = perf.maxGap = 0;
     statFrames = 0;
@@ -300,6 +302,7 @@ function applySettings(s) {
   fullVram = !!s.showVram;
   if (gpuWorker) gpuWorker.postMessage({ type: 'opts', fullVram });
   frameskip = s.frameskip ?? 0;
+  analogToDpad = s.analogToDpad !== false;
   audioEnabled = s.audioEnabled !== false;
   muteOnFF = s.muteOnFF !== false;
   audioTarget = Math.round(44100 * 2 * (s.latency ?? 100) / 1000);
@@ -456,7 +459,18 @@ onmessage = async (e) => {
         for (let p = 0; p < 2; p++) {
           const s = m.pads[p];
           if (!s) continue;
-          emu.set_buttons(p, s.buttons);
+          let buttons = s.buttons;
+          // A pad in digital mode ignores the sticks (like a real DualShock with the ANALOG
+          // light off), so let the left stick drive the D-pad instead.
+          if (analogToDpad && !emu.analog_mode(p)) {
+            const dx = s.lx - 128, dy = s.ly - 128;
+            const t = 56; // ~45% deflection
+            if (dx > t) buttons |= 1 << 5;  // right
+            if (dx < -t) buttons |= 1 << 7; // left
+            if (dy > t) buttons |= 1 << 6;  // down
+            if (dy < -t) buttons |= 1 << 4; // up
+          }
+          emu.set_buttons(p, buttons);
           emu.set_axes(p, s.lx, s.ly, s.rx, s.ry);
         }
         break;

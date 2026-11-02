@@ -223,28 +223,22 @@ h3.sub { font-size: 14px; margin: 18px 0 4px; color: var(--muted); }
 #touch .tp-dpad .l { top: 33%; left: 0; border-radius: 8px 2px 2px 8px; }
 #touch .tp-dpad .r { top: 33%; right: 0; border-radius: 2px 8px 8px 2px; }
 #touch .tp-dpad i { position: absolute; left: 33%; top: 33%; width: 34%; height: 34%; background: rgba(40,44,54,.85); }
-#touch .tp-stick {
-  width: var(--stick); height: var(--stick); border-radius: 50%;
-  background: rgba(40,44,54,.6); border: 2px solid rgba(255,255,255,.3); display: none;
-}
-#touch.with-stick .tp-stick { display: block; }
-#touch .knob {
-  position: absolute; left: 30%; top: 30%; width: 40%; height: 40%; border-radius: 50%;
-  background: rgba(200,205,215,.85); pointer-events: none;
-}
 #touch .tp-shoulder { display: flex; gap: 8px; }
 #touch .tp-shoulder button { width: 58px; height: 36px; border-radius: 10px; font-size: 13px; }
 #touch .tp-mid { display: flex; gap: 14px; }
 #touch .tp-mid button { width: 64px; height: 26px; border-radius: 13px; font-size: 10px; letter-spacing: .5px; }
 #touch .tp-sys { display: flex; gap: 6px; }
 #touch .tp-sys button { width: 36px; height: 30px; border-radius: 8px; font-size: 14px; }
+#touch .tp-analog { font-size: 13px !important; color: #9aa3b5; }
+#touch .tp-analog.lit { background: #c62828; border-color: #ff8a80; color: #fff; box-shadow: 0 0 10px rgba(255,60,60,.7); }
+#touch .tp-joy .ring b { display: none; position: absolute; left: 0; right: 0; bottom: 10%; text-align: center; font-size: 9px; letter-spacing: 1px; color: rgba(255,255,255,.5); pointer-events: none; }
+#touch.joy-analog .tp-joy .ring b { display: block; }
 
 /* landscape: controls overlay the sides of the picture */
 body.touch-on #touch { --dpad: min(36vh, 170px); --face: min(38vh, 180px); --stick: min(28vh, 130px); }
 body.touch-on #touch .tp-left { left: max(12px, env(safe-area-inset-left)); top: 10px; }
 body.touch-on #touch .tp-right { right: max(12px, env(safe-area-inset-right)); top: 10px; }
 body.touch-on #touch .tp-dpad { left: max(16px, env(safe-area-inset-left)); bottom: 20vh; }
-body.touch-on #touch .tp-stick { left: calc(max(16px, env(safe-area-inset-left)) + var(--dpad) + 8px); bottom: 4vh; }
 body.touch-on #touch .tp-face { right: max(16px, env(safe-area-inset-right)); bottom: 18vh; }
 body.touch-on #touch .tp-mid { left: 50%; transform: translateX(-50%); bottom: 10px; }
 body.touch-on #touch .tp-sys { left: 50%; transform: translateX(-50%); top: 8px; }
@@ -260,7 +254,6 @@ body.touch-on #touch .tp-sys { left: 50%; transform: translateX(-50%); top: 8px;
   body.touch-on #touch .tp-right { right: 12px; top: calc(50% + 10px); }
   body.touch-on #touch .tp-dpad { left: 14px; bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); }
   body.touch-on #touch .tp-face { right: 14px; bottom: max(60px, calc(env(safe-area-inset-bottom) + 52px)); }
-  body.touch-on #touch .tp-stick { left: 50%; transform: translateX(-50%); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 36px); }
   body.touch-on #touch .tp-mid { bottom: max(14px, env(safe-area-inset-bottom)); }
   body.touch-on #touch .tp-sys { top: calc(50% + 54px); flex-direction: column; }
 }
@@ -289,7 +282,7 @@ body.touch-on #touch.joy-float .tp-joy { left: 0; bottom: 4vh; }
 #touch .tp-gesture { position: absolute; inset: 0; display: none; touch-action: none; }
 #touch.gestures .tp-gesture { display: block; pointer-events: auto; }
 #touch.gesture-only .tp-shoulder, #touch.gesture-only .tp-dpad, #touch.gesture-only .tp-joy,
-#touch.gesture-only .tp-face, #touch.gesture-only .tp-stick { display: none !important; }
+#touch.gesture-only .tp-face { display: none !important; }
 #touch .tp-gknob {
   position: absolute; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.45); background: rgba(40,44,54,.25); pointer-events: none;

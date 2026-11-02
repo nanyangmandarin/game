@@ -13,6 +13,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | SPU: 24 voice ADPCM, ADSR, noise, pitch modulation, reverb, mixing CD audio | ✅ |
 | MDEC (video FMV) | ✅ |
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
+| Jalankan BIOS tanpa disc (menu memory card / CD player) | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
 | Save state: 5 slot + quick save (F5/F8) + auto-save, dengan thumbnail | ✅ |
@@ -48,7 +49,7 @@ Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Di perangkat multi-
 
 Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan → Kontroler).
 
-- **Kontrol arah**: D-pad, Joystick, atau Joystick mengambang (muncul di bawah jari). Joystick bisa dikirim sebagai D-pad digital, stik analog kiri, atau keduanya.
+- **Kontrol arah** (satu slot di kiri, pilih salah satu): D-pad, Joystick arah, Joystick arah mengambang, Stik analog, atau Stik analog mengambang. Tombol **A** di layar menyalakan mode analog DualShock (lampu merah). Saat mode digital, stik analog otomatis menggerakkan D-pad sehingga tetap berfungsi di game yang tidak mendukung analog.
 - **Gestur langsung di layar game**: tap = ✕, tap 2 jari = ○ (keduanya bisa diganti), tekan & tahan = menahan tombol, geser & tahan = arah. Opsi *hanya gestur* menyembunyikan tombol (Start/Select tetap ada) sehingga gambar game memenuhi layar. Mode potret: layar di atas, tombol di bawah. Mode lanskap: tombol di kiri-kanan gambar dan toolbar disembunyikan. Tombol ☰ ⏩ 💾 ↺ di layar untuk menu, fast-forward, quick save, dan quick load.
 
 ## Cara pakai

@@ -61,7 +61,7 @@
         <ul id="gameList" class="games"></ul>
         <p id="storageInfo" class="hint"></p>
       </section>
-      <div class="wel-actions"><button id="btnOpen" class="primary">+ Tambah / Buka Game…</button></div>
+      <div class="wel-actions"><button id="btnOpen" class="primary">+ Tambah / Buka Game…</button> <button id="btnBiosBoot" title="Menu BIOS: kelola memory card, CD player">Jalankan BIOS (tanpa disc)</button></div>
       <ol>
         <li id="stepBios"><b>BIOS:</b> <span id="biosStatus">belum ada</span> — <button id="btnBios" class="link">pilih file BIOS</button></li>
         <li><b>Game:</b> klik <i>Tambah / Buka Game</i> atau seret file ISO / BIN+CUE ke sini. Game disimpan di browser, jadi tetap ada setelah refresh.</li>
@@ -163,6 +163,7 @@
           </select></div>
         <div class="row"><label for="gamepadIndex">Gamepad fisik</label><select id="gamepadIndex"></select></div>
         <div class="row"><label for="deadzone">Deadzone stik</label><input type="range" id="deadzone" min="0" max="50" data-key="deadzone" data-num></div>
+        <div class="row"><label for="analogToDpad">Stik analog menggerakkan D-pad saat mode digital</label><input type="checkbox" id="analogToDpad" data-key="analogToDpad"></div>
         <div class="row"><label for="rumble">Getar (rumble)</label><input type="checkbox" id="rumble" data-key="rumble"></div>
         <h3 class="sub">Kontrol layar sentuh (HP / tablet)</h3>
         <div class="row"><label for="touchMode">Tampilkan kontrol di layar</label>
@@ -172,13 +173,13 @@
         <div class="row"><label for="touchOpacity">Transparansi tombol</label><input type="range" id="touchOpacity" min="15" max="100" data-key="touchOpacity" data-num></div>
         <div class="row"><label for="touchDir">Kontrol arah</label>
           <select id="touchDir" data-key="touchDir">
-            <option value="dpad">D-pad (tombol silang)</option><option value="joy">Joystick</option><option value="joyfloat">Joystick mengambang (ikut jari)</option>
+            <option value="dpad">D-pad (tombol silang)</option>
+            <option value="joy">Joystick arah (digital)</option>
+            <option value="joyfloat">Joystick arah mengambang (ikut jari)</option>
+            <option value="analog">Stik analog</option>
+            <option value="analogfloat">Stik analog mengambang (ikut jari)</option>
           </select></div>
-        <div class="row"><label for="touchDirOutput">Joystick &amp; gestur arah dikirim sebagai</label>
-          <select id="touchDirOutput" data-key="touchDirOutput">
-            <option value="dpad">D-pad digital</option><option value="analog">Stik analog kiri</option><option value="both">Keduanya</option>
-          </select></div>
-        <div class="row"><label for="touchStick">Stik analog tambahan di layar</label><input type="checkbox" id="touchStick" data-key="touchStick"></div>
+        <p class="hint">Stik analog mengirim stik kiri DualShock. Tombol <b>A</b> di layar menyalakan mode analog (seperti tombol ANALOG asli) untuk game yang mendukungnya.</p>
         <div class="row"><label for="touchHaptics">Getar saat tombol disentuh</label><input type="checkbox" id="touchHaptics" data-key="touchHaptics"></div>
         <h3 class="sub">Gestur langsung di layar game</h3>
         <div class="row"><label for="gestures">Aktifkan gestur di layar game</label><input type="checkbox" id="gestures" data-key="gestures"></div>
