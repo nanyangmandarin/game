@@ -1072,6 +1072,11 @@ function renderHotkeys() {
   }
 }
 
+// ---------------- version (helps confirm an update reached the device) ----------------
+fetch('version.json', { cache: 'no-store' }).then((r) => r.json()).then((v) => {
+  $('#appVersion').textContent = `Versi aplikasi: ${v.version} (${v.date})`;
+}).catch(() => {});
+
 // ---------------- install as an app (PWA) ----------------
 let installEvt = null;
 const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone;
