@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PS1 Web Emulator</title>
+  <meta name="description" content="Emulator PlayStation 1 berbasis WebAssembly yang berjalan langsung di browser.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">PS1<span>web</span></div>
+    <nav>
+      <button id="btnOpen" class="primary" title="Buka ISO / BIN+CUE / EXE">Buka Game</button>
+      <button id="btnPause" disabled title="Pause (P)">Pause</button>
+      <button id="btnReset" disabled title="Reset (F3)">Reset</button>
+      <button id="btnFF" disabled title="Fast-forward (tahan Tab)">⏩</button>
+      <button id="btnShot" disabled title="Screenshot (F9)">📷</button>
+      <button id="btnFull" title="Layar penuh (F2)">⛶</button>
+      <button id="btnSettings" title="Pengaturan (Esc)">⚙ Pengaturan</button>
+    </nav>
+  </header>
+
+  <main id="stage">
+    <div id="screenHost"></div>
+    <div id="overlay" class="hidden"></div>
+    <div id="welcome">
+      <h1>PlayStation 1 di browser</h1>
+      <p>Emulator berjalan sepenuhnya di perangkat Anda (WebAssembly). Tidak ada file yang diunggah ke server.</p>
+      <ol>
+        <li id="stepBios"><b>BIOS:</b> <span id="biosStatus">belum ada</span> — <button id="btnBios" class="link">pilih file BIOS</button></li>
+        <li><b>Game:</b> klik <i>Buka Game</i> atau seret file ISO / BIN+CUE ke sini.</li>
+      </ol>
+      <p class="muted">BIOS (mis. SCPH-1001 / SCPH-5501 / SCPH-7502) harus diambil dari konsol milik Anda sendiri. Ukurannya 512 KB.</p>
+    </div>
+    <div id="toast"></div>
+  </main>
+
+  <input type="file" id="fileGame" multiple accept=".iso,.bin,.img,.cue,.exe,.psexe,.psx" hidden>
+  <input type="file" id="fileBios" accept=".bin,.rom" hidden>
+  <input type="file" id="fileCard" accept=".mcr,.mcd,.srm,.gme,.ps,.bin" hidden>
+
+  <dialog id="settings">
+    <form method="dialog" class="dlg">
+      <header>
+        <h2>Pengaturan</h2>
+        <button value="close" class="icon" aria-label="Tutup">✕</button>
+      </header>
+      <div class="tabs" role="tablist">
+        <button type="button" data-tab="system" class="active">Sistem</button>
+        <button type="button" data-tab="graphics">Grafik</button>
+        <button type="button" data-tab="audio">Audio</button>
+        <button type="button" data-tab="controller">Kontroler</button>
+        <button type="button" data-tab="memcard">Memory Card</button>
+        <button type="button" data-tab="hotkeys">Hotkey</button>
+      </div>
+
+      <section data-panel="system" class="panel active">
+        <div class="row"><label>BIOS</label><div><span id="biosInfo">—</span> <button type="button" id="btnBios2">Ganti BIOS…</button> <button type="button" id="btnBiosDel" class="danger">Hapus</button></div></div>
+        <div class="row"><label for="speed">Batas kecepatan</label>
+          <select id="speed" data-key="speed" data-num>
+            <option value="0.5">50%</option><option value="0.75">75%</option><option value="1">100% (normal)</option>
+            <option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="0">Tanpa batas</option>
+          </select></div>
+        <div class="row"><label for="ffSpeed">Kecepatan fast-forward</label>
+          <select id="ffSpeed" data-key="ffSpeed" data-num>
+            <option value="2">200%</option><option value="3">300%</option><option value="4">400%</option><option value="0">Tanpa batas</option>
+          </select></div>
+        <div class="row"><label for="pauseOnBlur">Pause saat tab tidak aktif</label><input type="checkbox" id="pauseOnBlur" data-key="pauseOnBlur"></div>
+        <div class="row"><label for="showFps">Tampilkan FPS / kecepatan</label><input type="checkbox" id="showFps" data-key="showFps"></div>
+      </section>
+
+      <section data-panel="graphics" class="panel">
+        <div class="row"><label for="renderer">Renderer</label>
+          <select id="renderer" data-key="renderer">
+            <option value="software">Software (CPU) — tanpa GPU</option>
+            <option value="gpu">Hardware (GPU / WebGL)</option>
+          </select></div>
+        <p class="hint" id="rendererHint"></p>
+        <div class="row"><label for="aspect">Rasio aspek</label>
+          <select id="aspect" data-key="aspect">
+            <option value="4:3">4:3 (asli)</option><option value="16:9">16:9 (stretch)</option>
+            <option value="native">Piksel 1:1 (resolusi asli)</option><option value="stretch">Penuhi layar</option>
+          </select></div>
+        <div class="row"><label for="integer">Skala bilangan bulat (integer)</label><input type="checkbox" id="integer" data-key="integer"></div>
+        <div class="row"><label for="filter">Filter tampilan</label>
+          <select id="filter" data-key="filter">
+            <option value="nearest">Nearest (tajam)</option><option value="smooth">Bilinear (halus)</option>
+            <option value="sharp">Sharp bilinear (GPU)</option><option value="crt">CRT / scanline</option>
+          </select></div>
+        <div class="row"><label for="crt">Intensitas CRT</label><input type="range" id="crt" min="0" max="100" data-key="crt" data-num></div>
+        <div class="row"><label for="dither">Dithering (true color = off)</label><input type="checkbox" id="dither" data-key="dither"></div>
+        <div class="row"><label for="showVram">Tampilkan seluruh VRAM (debug)</label><input type="checkbox" id="showVram" data-key="showVram"></div>
+      </section>
+
+      <section data-panel="audio" class="panel">
+        <div class="row"><label for="audioEnabled">Audio aktif</label><input type="checkbox" id="audioEnabled" data-key="audioEnabled"></div>
+        <div class="row"><label for="volume">Volume</label><input type="range" id="volume" min="0" max="200" data-key="volume" data-num><output id="volOut"></output></div>
+        <div class="row"><label for="latency">Buffer / latensi</label>
+          <select id="latency" data-key="latency" data-num>
+            <option value="50">Rendah (50 ms)</option><option value="100">Normal (100 ms)</option><option value="200">Tinggi (200 ms)</option>
+          </select></div>
+        <div class="row"><label for="reverb">Reverb SPU</label><input type="checkbox" id="reverb" data-key="reverb"></div>
+        <div class="row"><label for="interpolation">Interpolasi sampel</label><input type="checkbox" id="interpolation" data-key="interpolation"></div>
+        <div class="row"><label for="muteOnFF">Bisukan saat fast-forward</label><input type="checkbox" id="muteOnFF" data-key="muteOnFF"></div>
+      </section>
+
+      <section data-panel="controller" class="panel">
+        <div class="row"><label for="port">Port</label>
+          <select id="port"><option value="0">Port 1</option><option value="1">Port 2</option></select></div>
+        <div class="row"><label for="padType">Jenis kontroler</label>
+          <select id="padType">
+            <option value="2">DualShock (analog + getar)</option><option value="1">Digital</option><option value="0">Tidak terpasang</option>
+          </select></div>
+        <div class="row"><label for="gamepadIndex">Gamepad fisik</label><select id="gamepadIndex"></select></div>
+        <div class="row"><label for="deadzone">Deadzone stik</label><input type="range" id="deadzone" min="0" max="50" data-key="deadzone" data-num></div>
+        <div class="row"><label for="rumble">Getar (rumble)</label><input type="checkbox" id="rumble" data-key="rumble"></div>
+        <p class="hint">Klik sebuah tombol lalu tekan tombol keyboard / gamepad yang diinginkan. Esc = kosongkan.</p>
+        <table class="binds" id="bindTable">
+          <thead><tr><th>Tombol PS1</th><th>Keyboard</th><th>Gamepad</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="actions"><button type="button" id="bindReset">Kembalikan default</button></div>
+      </section>
+
+      <section data-panel="memcard" class="panel">
+        <div class="cards" id="cards"></div>
+      </section>
+
+      <section data-panel="hotkeys" class="panel">
+        <table class="binds" id="hotkeyTable"><thead><tr><th>Aksi</th><th>Tombol</th></tr></thead><tbody></tbody></table>
+      </section>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
