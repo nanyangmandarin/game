@@ -405,13 +405,14 @@ pub struct GpuBackend {
     fw: u32,
     fh: u32,
     present: bool,
+    hw_on: bool,
 }
 
 #[wasm_bindgen]
 impl GpuBackend {
     #[wasm_bindgen(constructor)]
     pub fn new() -> GpuBackend {
-        GpuBackend { gpu: gpu::Gpu::new(), queue: Vec::new(), pos: 0, frame: Vec::new(), fw: 0, fh: 0, present: false }
+        GpuBackend { gpu: gpu::Gpu::new(), queue: Vec::new(), pos: 0, frame: Vec::new(), fw: 0, fh: 0, present: false, hw_on: false }
     }
 
     /// Append command records received from the CPU side.
@@ -466,10 +467,30 @@ impl GpuBackend {
                         self.gpu = g;
                         self.gpu.opt_dither = dither;
                         self.gpu.threaded = false;
+                        if self.hw_on {
+                            self.gpu.hw = Some(Vec::new());
+                        }
                     }
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Record a draw list for the WebGL2 high-resolution renderer.
+    pub fn hw_enable(&mut self, on: bool) {
+        self.hw_on = on;
+        self.gpu.hw = if on { Some(Vec::new()) } else { None };
+    }
+    pub fn hw_ptr(&self) -> *const u32 {
+        self.gpu.hw.as_ref().map(|v| v.as_ptr()).unwrap_or(std::ptr::null())
+    }
+    pub fn hw_len(&self) -> usize {
+        self.gpu.hw.as_ref().map(|v| v.len()).unwrap_or(0)
+    }
+    pub fn hw_clear(&mut self) {
+        if let Some(v) = self.gpu.hw.as_mut() {
+            v.clear();
         }
     }
 

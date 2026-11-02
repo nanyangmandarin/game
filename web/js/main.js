@@ -16,7 +16,7 @@ const $ = (s) => document.querySelector(s);
 // ---------------- settings ----------------
 const DEFAULTS = {
   speed: 1, ffSpeed: 3, pauseOnBlur: true, showFps: false,
-  renderer: 'software', aspect: '4:3', integer: false, filter: 'nearest', crt: 60, frameskip: 0, dither: true, showVram: false,
+  renderer: 'software', aspect: '4:3', integer: false, filter: 'nearest', crt: 60, hwScale: 1, frameskip: 0, dither: true, showVram: false,
   audioEnabled: true, volume: 100, latency: 100, reverb: true, interpolation: true, muteOnFF: true,
   padType: [2, 1], gamepadIndex: [0, -1], deadzone: 15, rumble: true,
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
@@ -97,14 +97,14 @@ worker.onmessage = async (e) => {
         const s = m;
         const draw = s.drawMs ?? presenter.drawMs;
         $('#overlay').textContent =
-          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}${s.threaded ? ' · GPU thread' : presenter.offscreen ? ' · offscreen' : ''}\n` +
+          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${presenter.mode === 'gpu' ? (presenter.hd ? `GPU ${presenter.hd}x` : 'GPU') : 'CPU'}${s.threaded ? ' · GPU thread' : presenter.offscreen ? ' · offscreen' : ''}\n` +
           `emulasi ${s.emuMs.toFixed(1)} ms · render ${s.renderMs.toFixed(1)} ms · disc ${s.discMs.toFixed(1)} ms · layar ${draw.toFixed(1)} ms\n` +
           `frame telat ${s.late}/detik · jeda terlama ${s.maxGap.toFixed(0)} ms`;
       }
       break;
     }
     case 'renderer':
-      presenter.confirmMode(m.mode, m.failed);
+      presenter.confirmMode(m.mode, m.failed, m.hd);
       break;
     case 'snapshot':
       presenter.gotSnapshot(m.snap);
@@ -838,6 +838,8 @@ function updateRendererHint() {
   const h = $('#rendererHint');
   if (settings.renderer === 'gpu' && presenter.mode !== 'gpu') {
     h.textContent = 'WebGL tidak tersedia di perangkat ini, jadi otomatis memakai renderer Software (CPU).';
+  } else if (presenter.hd) {
+    h.textContent = `Resolusi internal ${presenter.hd}x: poligon & sprite digambar ulang oleh GPU pada ${presenter.hd * 320}×${presenter.hd * 240}+ piksel. Tekstur dan efek tetap dari emulasi asli.`;
   } else if (presenter.mode === 'gpu') {
     h.textContent = 'GPU dipakai untuk menampilkan, menskalakan, dan memfilter gambar (sharp bilinear, CRT). Emulasi tetap di CPU.';
   } else {
@@ -846,7 +848,7 @@ function updateRendererHint() {
 }
 
 function applySettings() {
-  const used = presenter.setRenderer(settings.renderer);
+  const used = presenter.setRenderer(settings.renderer, false, settings.hwScale || 1);
   presenter.setOptions({
     aspect: settings.aspect, integer: settings.integer, filter: settings.filter,
     crt: settings.crt / 100, showVram: settings.showVram,

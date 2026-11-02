@@ -31,9 +31,11 @@ export class Presenter {
   }
 
   /** Switch renderer ('software' | 'gpu'). */
-  setRenderer(kind, force = false) {
-    if (this.kind === kind && this.canvas && !force) return this.mode;
+  setRenderer(kind, force = false, hwScale = this.hwScale || 1) {
+    if (this.kind === kind && this.hwScale === hwScale && this.canvas && !force) return this.mode;
     this.kind = kind;
+    this.hwScale = hwScale;
+    this.hd = 0;
     if (this.canvas) this.canvas.remove();
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'screen';
@@ -44,7 +46,7 @@ export class Presenter {
       this.offscreen = true;
       this.painter = null;
       this.mode = kind; // confirmed asynchronously by the worker
-      this.worker.postMessage({ type: 'canvas', canvas: off, kind, w, h, opts: this.opts }, [off]);
+      this.worker.postMessage({ type: 'canvas', canvas: off, kind, w, h, opts: this.opts, hwScale: kind === 'gpu' ? hwScale : 1 }, [off]);
     } else {
       this.offscreen = false;
       this.canvas.width = w;
@@ -59,9 +61,9 @@ export class Presenter {
   }
 
   /** Called with the worker's 'renderer' reply. */
-  confirmMode(mode, failed) {
-    if (failed) this.setRenderer('software', true);
-    else this.mode = mode;
+  confirmMode(mode, failed, hd) {
+    if (failed) this.setRenderer('software', true, 1);
+    else { this.mode = mode; this.hd = hd || 0; }
     this.onModeChange && this.onModeChange(this.mode);
   }
 

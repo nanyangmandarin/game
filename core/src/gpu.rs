@@ -15,6 +15,13 @@ pub const REC_STATE: u32 = 4;
 pub const REC_SYNC: u32 = 5;
 pub const REC_OPT: u32 = 6;
 
+// Hardware-renderer draw list (recorded by the GPU thread while it rasterizes in software).
+pub const HW_TRI: u32 = 1; // [tag, p0, p1, p2, area1, area2, 3 x (x, y, rgb, uv)]
+pub const HW_LINE: u32 = 2; // [tag, p0, area1, area2, x0, y0, c0, x1, y1, c1]
+pub const HW_FILL: u32 = 3; // [tag, x, y, w, h, rgb]
+pub const HW_COPY: u32 = 4; // [tag, sx, sy, dx, dy, w, h]
+pub const HW_UPLOAD: u32 = 5; // [tag, x, y, w, h]
+
 const VRAM_W: usize = 1024;
 const VRAM_H: usize = 512;
 
@@ -139,6 +146,9 @@ pub struct Gpu {
     /// VRAM must be fetched from the GPU thread before it can be read here.
     #[serde(skip)]
     pub need_sync: bool,
+    /// When Some, every drawing operation is also recorded for the WebGL2 high-resolution renderer.
+    #[serde(skip)]
+    pub hw: Option<Vec<u32>>,
 }
 
 impl Gpu {
@@ -201,6 +211,7 @@ impl Gpu {
             out: Vec::new(),
             run_hdr: None,
             need_sync: false,
+            hw: None,
         };
         g.reset_state();
         g
@@ -566,6 +577,9 @@ impl Gpu {
                 let w = ((self.cmd[2] & 0xFFFF).wrapping_sub(1) & 0x3FF) + 1;
                 let h = (((self.cmd[2] >> 16) & 0xFFFF).wrapping_sub(1) & 0x1FF) + 1;
                 self.load = Xfer { x, y, w, h, cx: 0, cy: 0 };
+                if let Some(hw) = self.hw.as_mut() {
+                    hw.extend_from_slice(&[HW_UPLOAD, x, y, w, h]);
+                }
                 self.mode = Mode::Load;
             }
             0xC0..=0xDF => {
@@ -643,6 +657,9 @@ impl Gpu {
         let y0 = (self.cmd[1] >> 16) & 0x1FF;
         let w = ((self.cmd[2] & 0x3FF) + 0xF) & !0xF;
         let h = (self.cmd[2] >> 16) & 0x1FF;
+        if let Some(hw) = self.hw.as_mut() {
+            hw.extend_from_slice(&[HW_FILL, x0, y0, w, h, c & 0xFF_FFFF]);
+        }
         for y in 0..h {
             let yy = ((y0 + y) as usize) & (VRAM_H - 1);
             for x in 0..w {
@@ -662,6 +679,9 @@ impl Gpu {
         let dy = (self.cmd[2] >> 16) & 0x1FF;
         let w = ((self.cmd[3] & 0xFFFF).wrapping_sub(1) & 0x3FF) + 1;
         let h = (((self.cmd[3] >> 16) & 0xFFFF).wrapping_sub(1) & 0x1FF) + 1;
+        if let Some(hw) = self.hw.as_mut() {
+            hw.extend_from_slice(&[HW_COPY, sx, sy, dx, dy, w, h]);
+        }
         let mut line = vec![0u16; w as usize];
         for y in 0..h {
             let syy = ((sy + y) as usize) & (VRAM_H - 1);
@@ -780,6 +800,33 @@ impl Gpu {
     }
 
     #[inline(always)]
+    fn hw_area(&self) -> (u32, u32) {
+        (
+            (self.da_x1 as u32) | ((self.da_y1 as u32) << 16),
+            (self.da_x2 as u32) | ((self.da_y2 as u32) << 16),
+        )
+    }
+
+    fn hw_tri(&mut self, v: &[Vtx; 3], p: &Prim) {
+        let p0 = p.tp_x
+            | (p.tp_y << 4)
+            | (p.depth << 8)
+            | ((p.textured as u32) << 12)
+            | ((p.raw as u32) << 13)
+            | ((p.semi as u32) << 14)
+            | (p.semi_mode << 16);
+        let p1 = p.clut_x | (p.clut_y << 16);
+        let p2 = self.win_mx | (self.win_my << 8) | (self.win_ox << 16) | (self.win_oy << 24);
+        let (a1, a2) = self.hw_area();
+        let hw = self.hw.as_mut().unwrap();
+        hw.extend_from_slice(&[HW_TRI, p0, p1, p2, a1, a2]);
+        for q in v {
+            let rgb = (q.r as u32 & 0xFF) | ((q.g as u32 & 0xFF) << 8) | ((q.b as u32 & 0xFF) << 16);
+            let uv = (q.u as u32 & 0xFFFF) | ((q.v as u32 & 0xFFFF) << 16);
+            hw.extend_from_slice(&[q.x as u32, q.y as u32, rgb, uv]);
+        }
+    }
+
     /// Cache the CLUT and texture-window masks for a textured primitive.
     fn prepare_tex(&mut self, p: &Prim) {
         self.tw = [
@@ -903,6 +950,9 @@ impl Gpu {
         let area = (v1.x - v0.x) as i64 * (v2.y - v0.y) as i64 - (v1.y - v0.y) as i64 * (v2.x - v0.x) as i64;
         if area == 0 {
             return;
+        }
+        if self.hw.is_some() {
+            self.hw_tri(&[v0, v1, v2], p);
         }
         let (a, b, c) = if area < 0 { (v0, v2, v1) } else { (v0, v1, v2) };
 
@@ -1052,6 +1102,15 @@ impl Gpu {
         let r = (c & 0xFF) as i32;
         let g = ((c >> 8) & 0xFF) as i32;
         let b = ((c >> 16) & 0xFF) as i32;
+        if self.hw.is_some() && w > 0 && h > 0 {
+            // two triangles; texcoords at pixel edges so pixel centres sample u0+dx (or u0-dx flipped)
+            let (ul, ur) = if self.flip_x { (u0 + 1, u0 + 1 - w) } else { (u0, u0 + w) };
+            let (vt, vb) = if self.flip_y { (v0 + 1, v0 + 1 - h) } else { (v0, v0 + h) };
+            let vx = |x, y, u, v| Vtx { x, y, r, g, b, u, v };
+            let (a0, a1, a2, a3) = (vx(x0, y0, ul, vt), vx(x0 + w, y0, ur, vt), vx(x0, y0 + h, ul, vb), vx(x0 + w, y0 + h, ur, vb));
+            self.hw_tri(&[a0, a1, a2], &p);
+            self.hw_tri(&[a1, a2, a3], &p);
+        }
         let xs = x0.max(self.da_x1);
         let xe = (x0 + w - 1).min(self.da_x2).min(1023);
         let ys = y0.max(self.da_y1);
@@ -1138,6 +1197,13 @@ impl Gpu {
         let dy = y1 - y0;
         if dx.abs() >= 1024 || dy.abs() >= 512 {
             return;
+        }
+        if self.hw.is_some() {
+            let p0 = (semi as u32) << 14 | self.semi_mode << 16;
+            let (a1, a2) = self.hw_area();
+            let c1 = if gour { c1 } else { c0 };
+            let rec = [HW_LINE, p0, a1, a2, x0 as u32, y0 as u32, c0 & 0xFF_FFFF, x1 as u32, y1 as u32, c1 & 0xFF_FFFF];
+            self.hw.as_mut().unwrap().extend_from_slice(&rec);
         }
         let steps = dx.abs().max(dy.abs());
         let comp = |c: u32, s: u32| ((c >> s) & 0xFF) as i32;

@@ -16,6 +16,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
 | Jalankan BIOS tanpa disc (menu memory card / CD player) | ✅ |
 | Rewind (tahan R / ⏪, ±12 detik, delta snapshot ~15 MB) | ✅ |
+| Resolusi internal 2x/3x/4x (renderer GPU, WebGL2) | ✅ |
 | Cheat GameShark / Action Replay (80/30, 10/11/20/21, D0–D3, E0–E3, C0, 50, C2) per game | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
@@ -28,7 +29,8 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 Pilihannya ada di **Pengaturan → Grafik → Renderer**:
 
 - **Software (CPU)**: rasterizer CPU + Canvas 2D. Jalan di perangkat apa pun, termasuk yang tanpa GPU atau driver grafisnya bermasalah.
-- **Hardware (GPU / WebGL)**: VRAM mentah dikirim ke GPU dan konversi warna, skala, serta filter (nearest, bilinear, sharp bilinear, CRT) dikerjakan shader. Kalau WebGL tidak tersedia, otomatis kembali ke Software.
+- **Hardware (GPU / WebGL)**: VRAM mentah dikirim ke GPU dan konversi warna, skala, serta filter (nearest, bilinear, sharp bilinear, CRT) dikerjakan shader.
+- **Resolusi internal 2x/3x/4x** (renderer GPU + GPU thread, WebGL2): rasterizer software tetap memegang VRAM asli (akurat untuk tekstur, save state, efek), sementara setiap poligon/sprite/garis juga digambar ulang oleh WebGL2 pada resolusi tinggi dengan tekstur & CLUT dibaca langsung dari VRAM asli di shader, semi-transparansi PS1 lewat blending GPU (dua pass untuk transparansi per-texel). Belum didukung: mask bit pada layer resolusi tinggi; efek render-ke-tekstur memakai hasil akhir frame. Kalau WebGL tidak tersedia, otomatis kembali ke Software.
 
 Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Di perangkat multi-core, **emulasi GPU berjalan di thread terpisah**: CPU mengerjakan frame berikutnya sementara GPU menggambar frame sekarang. Hasilnya tetap identik dengan satu thread (diuji byte per byte). Mode ini butuh `SharedArrayBuffer`; karena GitHub Pages tidak bisa mengirim header COOP/COEP, `web/sw.js` menambahkannya, dan halaman dimuat ulang sekali pada kunjungan pertama. Bisa dimatikan di Pengaturan → Sistem. Audio memakai **AudioWorklet** dengan sinkronisasi kecepatan berbasis buffer.
 
