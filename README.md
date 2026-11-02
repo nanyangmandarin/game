@@ -18,6 +18,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | Rewind (tahan R / ⏪, ±12 detik, delta snapshot ~15 MB) | ✅ |
 | Resolusi internal 2x/3x/4x (renderer GPU, WebGL2) | ✅ |
 | Cheat GameShark / Action Replay (80/30, 10/11/20/21, D0–D3, E0–E3, C0, 50, C2) per game | ✅ |
+| Cheat otomatis dari internet sesuai game (serial disc → database cheat libretro) | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
 | Save state: 5 slot + quick save (F5/F8) + auto-save, dengan thumbnail | ✅ |
@@ -85,6 +86,12 @@ Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan →
 | Stik kiri | Panah | | Stik kanan | Numpad 8/4/2/6 |
 
 Hotkey: **P** pause, **F5** quick save, **F8** quick load, **R** (tahan) rewind, **Tab** (tahan) fast-forward, **F2** layar penuh, **F3** reset, **F4** toggle analog, **F9** screenshot, **Esc** menu. Gamepad standar (Xbox/PS/dll.) langsung terpetakan; tombol Home/Guide mengaktifkan mode analog.
+
+## Cheat otomatis
+
+Saat game dimulai, emulator membaca **serial disc** (mis. `SLUS-01115`) dari `SYSTEM.CNF` lalu mencocokkannya dengan indeks `web/data/ps1-cheats.json` (2900+ serial → file cheat GameShark). File cheat diunduh dari [libretro-database](https://github.com/libretro/libretro-database) (komunitas RetroArch), disimpan di browser untuk dipakai offline, dan dimasukkan ke daftar 🎯 Cheat dalam keadaan **mati**. Jika serial tidak dikenal, judul file dipakai; bisa juga memilih judul secara manual.
+
+Perbarui indeks: `python3 tools/build_cheat_index.py "<libretro-database>/cht/Sony - PlayStation" "<libretro-database>/metadat/redump/Sony - PlayStation.dat" web/data/ps1-cheats.json`.
 
 ## Build
 

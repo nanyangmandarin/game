@@ -6,6 +6,7 @@ import {
   opfsSupported, dirName, listGames, getGame, putGame, touchGame, gameFiles, removeGame, importGame, storageInfo, fmtSize,
 } from './library.js';
 import { TouchPad, isTouchDevice } from './touch.js';
+import { findCheatFile, fetchCheatFile, searchCheatFiles } from './cheatdb.js';
 import {
   Input, BUTTONS, BUTTON_LABELS, AXES, AXIS_LABELS, DEFAULT_KEYS, DEFAULT_PAD,
   DEFAULT_HOTKEYS, HOTKEY_LABELS, keyLabel,
@@ -61,6 +62,7 @@ let gameId = 'shared';
 let gameTitle = '';
 let biosName = null;
 let lastStats = null;
+let gameSerial = '';
 let discCount = 1;
 let currentDisc = 0;
 let slowSeconds = 0;
@@ -110,6 +112,9 @@ worker.onmessage = async (e) => {
       presenter.gotSnapshot(m.snap);
       break;
     case 'booted':
+      gameSerial = m.serial || '';
+      if (gameSerial && currentMeta) currentMeta.serial = gameSerial;
+      autoCheats();
       discCount = m.discCount || 1;
       updateDiscButton();
       toast(`${m.resumed ? 'Melanjutkan' : 'Berjalan'}: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
@@ -576,7 +581,10 @@ function renderCheats() {
     const cb = li.querySelector('input');
     cb.checked = !!c.on;
     li.querySelector('span').textContent = c.name || `Cheat ${i + 1}`;
-    li.querySelector('small').textContent = `${c.code.trim().split('\n').length} kode`;
+    li.querySelector('small').textContent = c.bad ? 'tidak didukung' : `${c.code.trim().split('\n').length} kode${c.src === 'db' ? ' · db' : ''}`;
+    if (c.bad) { cb.disabled = true; li.title = c.bad; }
+    const q = normFilter($('#cheatFilter').value);
+    if (q && !normFilter(c.name || '').includes(q)) li.style.display = 'none';
     cb.onchange = async () => { c.on = cb.checked; await saveCheats(true); };
     const [edit, del] = li.querySelectorAll('button');
     edit.onclick = () => {
@@ -594,6 +602,94 @@ function renderCheats() {
     ul.appendChild(li);
   });
 }
+
+function normFilter(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+$('#cheatFilter').addEventListener('input', () => renderCheats());
+
+/** Merge cheats from a libretro .cht file into this game's list (disabled by default). */
+async function importDbCheats(file, { refresh = false, announce = true } = {}) {
+  const list = await fetchCheatFile(file, { refresh });
+  const errors = await request({ type: 'validateCheats', list: list.map((c) => c.code) });
+  cheats = (await kv.get(cheatKey())) || [];
+  const seen = new Set(cheats.map((c) => c.name + '|' + c.code));
+  let added = 0;
+  list.forEach((c, i) => {
+    if (seen.has(c.name + '|' + c.code)) return;
+    cheats.push({ name: c.name, code: c.code, on: false, src: 'db', bad: errors[i] || undefined });
+    added++;
+  });
+  await kv.set(cheatKey(), cheats);
+  await kv.set(`cheatsrc:${gameId}`, file);
+  const usable = list.length - errors.filter(Boolean).length;
+  if (announce && added) toast(`${usable} cheat untuk game ini tersedia dari database. Buka 🎯 Cheat untuk mengaktifkan.`, false, 6000);
+  return { file, total: list.length, added, usable };
+}
+
+/** On boot: find this game's cheats online once (cached afterwards). */
+async function autoCheats() {
+  if (!currentMeta || currentMeta.exe || currentMeta.id === 'bios') return;
+  if (await kv.get(`cheatsrc:${gameId}`)) return; // already imported
+  try {
+    const file = await findCheatFile(gameSerial, currentMeta.title);
+    if (file) await importDbCheats(file);
+  } catch (err) {
+    console.warn('cheat db', err);
+  }
+}
+
+async function updateDbInfo() {
+  const src = await kv.get(`cheatsrc:${gameId}`);
+  const n = cheats.filter((c) => c.src === 'db').length;
+  $('#cheatDbInfo').textContent = src
+    ? `Database libretro: ${src.replace(/\.cht$/, '')} (${n} cheat)${gameSerial ? ' · serial ' + gameSerial : ''}`
+    : `Belum ada cheat dari database${gameSerial ? ' untuk serial ' + gameSerial : ''}. Tekan "Ambil dari internet" atau pilih judul manual.`;
+  $('#cheatFilter').classList.toggle('hidden', cheats.length < 8);
+}
+
+$('#cheatDbRefresh').onclick = async () => {
+  const btn = $('#cheatDbRefresh');
+  btn.disabled = true;
+  try {
+    const file = (await kv.get(`cheatsrc:${gameId}`)) || (await findCheatFile(gameSerial, currentMeta?.title));
+    if (!file) { toast('Game ini tidak ditemukan di database. Coba "Pilih judul manual".', true, 6000); return; }
+    const r = await importDbCheats(file, { refresh: true, announce: false });
+    toast(r.added ? `${r.added} cheat baru ditambahkan` : 'Daftar cheat sudah terbaru');
+    renderCheats();
+    updateDbInfo();
+  } catch (err) {
+    toast('Gagal mengambil cheat (cek koneksi internet): ' + err.message, true, 6000);
+  } finally {
+    btn.disabled = false;
+  }
+};
+$('#cheatDbPick').onclick = () => {
+  $('#cheatDbSearch').classList.toggle('hidden');
+  $('#cheatDbQuery').value = currentMeta?.title?.replace(/\s*\([^)]*\)/g, '') || '';
+  $('#cheatDbQuery').dispatchEvent(new Event('input'));
+  $('#cheatDbQuery').focus();
+};
+$('#cheatDbQuery').addEventListener('input', async () => {
+  const ul = $('#cheatDbResults');
+  const res = await searchCheatFiles($('#cheatDbQuery').value);
+  ul.innerHTML = res.length ? '' : '<li class="muted">Tidak ada judul yang cocok.</li>';
+  for (const f of res) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span></span><button type="button">Pakai</button>';
+    li.querySelector('span').textContent = f.replace(/\.cht$/, '');
+    li.querySelector('button').onclick = async () => {
+      try {
+        const r = await importDbCheats(f, { announce: false });
+        toast(`${r.usable} cheat dari "${f.replace(/\.cht$/, '')}"`);
+        $('#cheatDbSearch').classList.add('hidden');
+        renderCheats();
+        updateDbInfo();
+      } catch (err) {
+        toast('Gagal mengambil cheat: ' + err.message, true, 6000);
+      }
+    };
+    ul.appendChild(li);
+  }
+});
 
 async function saveCheats(announce) {
   await kv.set(cheatKey(), cheats);
@@ -624,7 +720,9 @@ $('#cheatCancel').onclick = resetCheatForm;
 $('#btnCheats').onclick = async () => {
   cheats = (await kv.get(cheatKey())) || [];
   resetCheatForm();
+  $('#cheatFilter').value = '';
   renderCheats();
+  updateDbInfo();
   if (!paused) { setPaused(true); pausedForCheats = true; }
   $('#cheatDlg').showModal();
 };

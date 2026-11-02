@@ -92,6 +92,59 @@ impl Disc {
         self.reader.read(t.file, off, &mut buf[24..24 + n])
     }
 
+    /// User data (2048 bytes) of the sector at disc LBA `lba` (absolute frame 150 + lba).
+    fn data_sector(&mut self, lba: u32) -> Option<Vec<u8>> {
+        let mut buf = [0u8; SECTOR_RAW];
+        if !self.read_sector(150 + lba, &mut buf) {
+            return None;
+        }
+        let off = if buf[15] == 1 { 16 } else { 24 };
+        Some(buf[off..off + 2048].to_vec())
+    }
+
+    /// Game serial (e.g. "SLUS-01115") from the BOOT line of SYSTEM.CNF on the disc.
+    pub fn serial(&mut self) -> Option<String> {
+        let pvd = self.data_sector(16)?;
+        if &pvd[1..6] != b"CD001" {
+            return None;
+        }
+        let rd32 = |b: &[u8], o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
+        let root_lba = rd32(&pvd, 156 + 2);
+        let root_len = rd32(&pvd, 156 + 10).min(64 * 2048);
+        let mut cnf = None;
+        for s in 0..root_len.div_ceil(2048) {
+            let dir = self.data_sector(root_lba + s)?;
+            let mut o = 0;
+            while o < 2048 {
+                let len = dir[o] as usize;
+                if len == 0 || o + len > 2048 {
+                    break;
+                }
+                let nlen = dir[o + 32] as usize;
+                let name = String::from_utf8_lossy(&dir[o + 33..(o + 33 + nlen).min(2048)]).to_uppercase();
+                if name.starts_with("SYSTEM.CNF") {
+                    cnf = Some((rd32(&dir, o + 2), rd32(&dir, o + 10)));
+                }
+                o += len;
+            }
+        }
+        let (lba, size) = cnf?;
+        let data = self.data_sector(lba)?;
+        let text = String::from_utf8_lossy(&data[..(size as usize).min(2048)]).to_string();
+        let line = text.lines().find(|l| l.trim_start().to_uppercase().starts_with("BOOT"))?;
+        let path = line.split('=').nth(1)?.trim();
+        let file = path.rsplit(|c| c == '\\' || c == ':' || c == '/').next()?;
+        let file = file.split(';').next()?.to_uppercase();
+        // "SLUS_011.15" -> "SLUS-01115"
+        let letters: String = file.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+        let digits: String = file.chars().filter(|c| c.is_ascii_digit()).collect();
+        if letters.len() == 4 && digits.len() == 5 {
+            Some(format!("{letters}-{digits}"))
+        } else {
+            Some(file)
+        }
+    }
+
     fn detect_region(&mut self) {
         let mut buf = [0u8; SECTOR_RAW];
         if !self.read_sector(150 + 4, &mut buf) {

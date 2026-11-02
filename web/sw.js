@@ -8,7 +8,7 @@ const SHELL = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'js/main.js', 'js/worker.js', 'js/gpu-worker.js', 'js/import-worker.js', 'js/audio-worklet.js',
   'js/presenter.js', 'js/painter.js', 'js/ring.js', 'js/input.js', 'js/touch.js', 'js/disc.js',
-  'js/library.js', 'js/memcard.js', 'js/storage.js',
+  'js/library.js', 'js/memcard.js', 'js/storage.js', 'js/cheatdb.js', 'js/hw.js', 'js/touch.js', 'data/ps1-cheats.json',
   'pkg/ps1core.js', 'pkg/ps1core_bg.wasm',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
 ];

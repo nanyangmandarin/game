@@ -432,7 +432,7 @@ onmessage = async (e) => {
             postMessage({ type: 'error', message: 'Gagal memuat progres: ' + (err?.message || err) });
           }
         }
-        postMessage({ type: 'booted', region: emu.disc_region(), resumed, discCount });
+        postMessage({ type: 'booted', region: emu.disc_region(), serial: m.tracks || m.container ? emu.disc_serial() : '', resumed, discCount });
         start();
         break;
       }
@@ -460,7 +460,7 @@ onmessage = async (e) => {
         let discCount = 1;
         if (m.container) discCount = emu.swap_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
         else if (m.tracks) { emu.insert_disc(readDisc, new Uint32Array(m.tracks)); emu.open_lid(); }
-        postMessage({ type: 'discSwapped', region: emu.disc_region(), discCount, disc: m.disc || 0 });
+        postMessage({ type: 'discSwapped', region: emu.disc_region(), serial: emu.disc_serial(), discCount, disc: m.disc || 0 });
         kick();
         break;
       }
@@ -469,6 +469,9 @@ onmessage = async (e) => {
         postMessage({ type: 'cheatsApplied', errors, count: m.count || 0 });
         break;
       }
+      case 'validateCheats':
+        postMessage({ type: 'cheatValid', id: m.id, error: m.list.map((t) => emu.validate_cheat(t)) });
+        break;
       case 'validateCheat':
         postMessage({ type: 'cheatValid', id: m.id, error: emu.validate_cheat(m.text) });
         break;

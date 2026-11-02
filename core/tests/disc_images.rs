@@ -115,3 +115,18 @@ fn fast_boot_skips_intro() {
     println!("first disc read: normal frame {normal}, fast boot frame {fast}");
     assert!(fast + 60 < normal, "fast boot should be clearly earlier");
 }
+
+/// The serial comes from the BOOT line of SYSTEM.CNF (ISO9660), for any image format.
+#[test]
+fn serial_from_system_cnf() {
+    let Ok(dir) = std::env::var("PS1_TESTIMG_DIR") else { return };
+    let path = std::path::Path::new(&dir).join("serial.iso");
+    if !path.exists() {
+        return;
+    }
+    let (r, size) = open(&path);
+    let frames = (size / 2048) as u32;
+    let track = ps1core::cdrom::Track { number: 1, file: 0, start: 150, length: frames, sector_size: 2048, audio: false, file_offset: 0 };
+    let mut disc = Disc::new(vec![track], r);
+    assert_eq!(disc.serial().as_deref(), Some("SLUS-01115"));
+}

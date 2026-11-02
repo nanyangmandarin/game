@@ -244,6 +244,12 @@
       </header>
       <div class="panel active">
         <p class="hint">Kode GameShark / Action Replay PS1, format <code>XXXXXXXX YYYY</code> (satu kode per baris). Disimpan per game. Cheat aktif diterapkan setiap frame.</p>
+        <div class="cheat-db">
+          <p class="hint" id="cheatDbInfo">Database cheat: belum dicek.</p>
+          <div class="btns"><button type="button" id="cheatDbRefresh">Ambil dari internet</button><button type="button" id="cheatDbPick">Pilih judul manual…</button></div>
+          <div id="cheatDbSearch" class="hidden"><input type="text" id="cheatDbQuery" placeholder="Ketik judul game (bahasa Inggris)"><ul id="cheatDbResults" class="cheats"></ul></div>
+        </div>
+        <input type="text" id="cheatFilter" class="hidden" placeholder="Cari cheat… (mis. money, max)">
         <ul id="cheatList" class="cheats"></ul>
         <h3 class="sub" id="cheatFormTitle">Tambah cheat</h3>
         <div class="cheat-form">

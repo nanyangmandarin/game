@@ -30,10 +30,12 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.130 --locked
       - name: Test disc images (CHD via MAME chdman, PBP)
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q mame-tools
+          sudo apt-get update -q && sudo apt-get install -y -q mame-tools genisoimage
           python3 tools/make_test_images.py "$RUNNER_TEMP/imgs"
           cd "$RUNNER_TEMP/imgs"
           for c in cdlz cdzl cdfl; do chdman createcd -f -i test.cue -o test-$c.chd -c $c,cdzl; done
+          mkdir -p isoroot && printf 'BOOT = cdrom:\\SLUS_011.15;1\r\nTCB = 4\r\n' > isoroot/SYSTEM.CNF
+          head -c 300000 /dev/urandom > isoroot/SLUS_011.15 && genisoimage -quiet -o serial.iso isoroot
       - name: Tests
         run: PS1_TESTIMG_DIR="$RUNNER_TEMP/imgs" cargo test --manifest-path core/Cargo.toml --release
       - name: Build WASM

@@ -6,7 +6,8 @@ Creates in OUT_DIR:
                          2-second pregap stored in the file (500 frames after INDEX 01)
   test.pbp             - single-disc PBP of test.bin (raw-deflate blocks of 16 frames)
   multi.pbp            - two-disc PBP (both discs = test.bin)
-CHD files are made with MAME's chdman (see tests/disc_images.rs).
+CHD files are made with MAME's chdman; serial.iso (ISO9660 with SYSTEM.CNF) with genisoimage
+(see .github/workflows/pages.yml).
 """
 import os
 import random

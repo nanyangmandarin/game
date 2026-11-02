@@ -127,6 +127,11 @@ impl Emulator {
         self.psx.bus.cd.insert(None);
     }
 
+    /// Serial of the inserted disc from SYSTEM.CNF ("" if unknown).
+    pub fn disc_serial(&mut self) -> String {
+        self.psx.bus.cd.disc.as_mut().and_then(|d| d.serial()).unwrap_or_default()
+    }
+
     pub fn disc_region(&self) -> String {
         match self.psx.bus.cd.disc.as_ref().map(|d| d.region) {
             Some(b'E') => "PAL (Eropa)".into(),
