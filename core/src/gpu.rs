@@ -7,6 +7,14 @@ pub const EV_HBLANK_END: u8 = 2;
 pub const EV_VBLANK_START: u8 = 4;
 pub const EV_VBLANK_END: u8 = 8;
 
+// Records sent from the CPU-side GPU frontend to the GPU thread (header = tag << 24 | len).
+pub const REC_GP0: u32 = 1;
+pub const REC_GP1: u32 = 2;
+pub const REC_FRAME: u32 = 3;
+pub const REC_STATE: u32 = 4;
+pub const REC_SYNC: u32 = 5;
+pub const REC_OPT: u32 = 6;
+
 const VRAM_W: usize = 1024;
 const VRAM_H: usize = 512;
 
@@ -119,6 +127,18 @@ pub struct Gpu {
     clut_cache: Vec<u16>,
     #[serde(skip)]
     tw: [u32; 4], // u_and, u_or, v_and, v_or
+    // ---- threaded mode (frontend side) ----
+    /// When set, drawing is not performed here: commands are recorded in `out`
+    /// for a GPU thread that owns the authoritative VRAM.
+    #[serde(skip)]
+    pub threaded: bool,
+    #[serde(skip)]
+    pub out: Vec<u32>,
+    #[serde(skip)]
+    run_hdr: Option<usize>,
+    /// VRAM must be fetched from the GPU thread before it can be read here.
+    #[serde(skip)]
+    pub need_sync: bool,
 }
 
 impl Gpu {
@@ -177,6 +197,10 @@ impl Gpu {
             stat_cmds: 0,
             clut_cache: vec![0; 256],
             tw: [0xFF, 0, 0xFF, 0],
+            threaded: false,
+            out: Vec::new(),
+            run_hdr: None,
+            need_sync: false,
         };
         g.reset_state();
         g
@@ -184,8 +208,12 @@ impl Gpu {
 
     pub fn reset(&mut self) {
         let dither = self.opt_dither;
+        let threaded = self.threaded;
+        let out = std::mem::take(&mut self.out);
         *self = Gpu::new();
         self.opt_dither = dither;
+        self.threaded = threaded;
+        self.out = out;
     }
 
     fn reset_state(&mut self) {
@@ -329,7 +357,49 @@ impl Gpu {
 
     // ---------------- GP1 ----------------
 
+    // ---------------- threaded-mode recording ----------------
+
+    fn rec_gp0(&mut self, w: u32) {
+        match self.run_hdr {
+            Some(h) if (self.out[h] & 0xFF_FFFF) < 0xFF_FFFF => {
+                self.out[h] += 1;
+            }
+            _ => {
+                self.run_hdr = Some(self.out.len());
+                self.out.push((REC_GP0 << 24) | 1);
+            }
+        }
+        self.out.push(w);
+    }
+
+    pub fn rec(&mut self, tag: u32, payload: &[u32]) {
+        self.run_hdr = None;
+        self.out.push((tag << 24) | payload.len() as u32);
+        self.out.extend_from_slice(payload);
+    }
+
+    /// Record the complete GPU state (incl. VRAM) so the GPU thread can mirror it.
+    pub fn rec_state(&mut self) {
+        let bytes = bincode::serialize(&*self).expect("gpu state");
+        let mut words = Vec::with_capacity(bytes.len() / 4 + 2);
+        words.push(bytes.len() as u32);
+        for c in bytes.chunks(4) {
+            let mut b = [0u8; 4];
+            b[..c.len()].copy_from_slice(c);
+            words.push(u32::from_le_bytes(b));
+        }
+        self.rec(REC_STATE, &words);
+    }
+
+    pub fn take_out(&mut self) -> Vec<u32> {
+        self.run_hdr = None;
+        std::mem::take(&mut self.out)
+    }
+
     pub fn gp1(&mut self, v: u32) {
+        if self.threaded {
+            self.rec(REC_GP1, &[v]);
+        }
         let p = v & 0xFF_FFFF;
         match v >> 24 {
             0x00 => {
@@ -431,6 +501,9 @@ impl Gpu {
     }
 
     pub fn gp0(&mut self, w: u32) {
+        if self.threaded {
+            self.rec_gp0(w);
+        }
         match self.mode {
             Mode::Load => {
                 self.load_pixel(w as u16);
@@ -501,6 +574,9 @@ impl Gpu {
                 let h = (((self.cmd[2] >> 16) & 0xFFFF).wrapping_sub(1) & 0x1FF) + 1;
                 self.read = Xfer { x, y, w, h, cx: 0, cy: 0 };
                 self.reading = true;
+                if self.threaded {
+                    self.need_sync = true;
+                }
             }
             0xE1 => {
                 self.tp_x = c & 0xF;
@@ -544,7 +620,7 @@ impl Gpu {
         let x = (l.x + l.cx) as usize & (VRAM_W - 1);
         let y = (l.y + l.cy) as usize & (VRAM_H - 1);
         let i = y * VRAM_W + x;
-        if !(self.check_mask && self.vram[i] & 0x8000 != 0) {
+        if !self.threaded && !(self.check_mask && self.vram[i] & 0x8000 != 0) {
             self.vram[i] = p | if self.set_mask { 0x8000 } else { 0 };
         }
         l.cx += 1;
@@ -558,6 +634,9 @@ impl Gpu {
     }
 
     fn fill_rect(&mut self) {
+        if self.threaded {
+            return;
+        }
         let c = self.cmd[0];
         let col = rgb24_to_15(c);
         let x0 = self.cmd[1] & 0x3F0;
@@ -574,6 +653,9 @@ impl Gpu {
     }
 
     fn copy_vram(&mut self) {
+        if self.threaded {
+            return;
+        }
         let sx = self.cmd[1] & 0x3FF;
         let sy = (self.cmd[1] >> 16) & 0x1FF;
         let dx = self.cmd[2] & 0x3FF;
@@ -685,6 +767,9 @@ impl Gpu {
             p.dither = false;
         }
 
+        if self.threaded {
+            return; // texpage/draw-mode state above is all the frontend needs
+        }
         if tex {
             self.prepare_tex(&p);
         }
@@ -924,6 +1009,9 @@ impl Gpu {
     }
 
     fn draw_rect(&mut self) {
+        if self.threaded {
+            return;
+        }
         let c = self.cmd[0];
         let op = c >> 24;
         let tex = op & 0x04 != 0;
@@ -1002,6 +1090,9 @@ impl Gpu {
     }
 
     fn draw_line_cmd(&mut self) {
+        if self.threaded {
+            return;
+        }
         let c = self.cmd[0];
         let gour = (c >> 24) & 0x10 != 0;
         let (x0, y0) = self.vertex_xy(self.cmd[1]);
@@ -1012,6 +1103,9 @@ impl Gpu {
     }
 
     fn draw_polyline(&mut self) {
+        if self.threaded {
+            return;
+        }
         let c = self.cmd[0];
         let gour = (c >> 24) & 0x10 != 0;
         let semi = (c >> 24) & 0x02 != 0;

@@ -48,6 +48,9 @@ pub struct Bus {
     cache_ctrl: u32,
     pub frame_done: bool,
     pub cycles: u64,
+    /// Threaded GPU: sends recorded commands to the GPU thread and copies its VRAM back.
+    #[serde(skip)]
+    pub gpu_sync: Option<Box<dyn FnMut(&[u32], &mut [u16])>>,
 }
 
 impl Bus {
@@ -72,6 +75,7 @@ impl Bus {
             cache_ctrl: 0,
             frame_done: false,
             cycles: 0,
+            gpu_sync: None,
         }
     }
 
@@ -92,6 +96,22 @@ impl Bus {
         self.mdec = Mdec::new();
         self.frame_done = false;
         self.cycles = 0;
+    }
+
+    /// Make this side's VRAM current (threaded GPU): flush commands, wait, copy back.
+    pub fn gpu_flush_sync(&mut self) {
+        if !self.gpu.threaded {
+            return;
+        }
+        if let Some(f) = self.gpu_sync.as_mut() {
+            self.gpu.rec(crate::gpu::REC_SYNC, &[]);
+            let out = self.gpu.take_out();
+            f(&out, &mut self.gpu.vram);
+            let mut out = out;
+            out.clear();
+            self.gpu.out = out;
+        }
+        self.gpu.need_sync = false;
     }
 
     #[inline(always)]
@@ -259,6 +279,9 @@ impl Bus {
                 r
             }
             0x810..=0x817 => {
+                if off & !3 == 0x810 && self.gpu.need_sync {
+                    self.gpu_flush_sync();
+                }
                 let v = if off & !3 == 0x810 { self.gpu.read_data() } else { self.gpu.status() };
                 v >> sub & mask
             }
@@ -459,6 +482,9 @@ impl Bus {
                     _ => {}
                 }
             } else {
+                if ch == 2 && self.gpu.need_sync {
+                    self.gpu_flush_sync();
+                }
                 let w = match ch {
                     1 => self.mdec.read_data(),
                     2 => self.gpu.read_data(),

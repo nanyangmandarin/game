@@ -25,9 +25,9 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 Pilihannya ada di **Pengaturan → Grafik → Renderer**:
 
 - **Software (CPU)**: rasterizer CPU + Canvas 2D. Jalan di perangkat apa pun, termasuk yang tanpa GPU atau driver grafisnya bermasalah.
-- **Hardware (GPU / WebGL)**: GPU dipakai untuk menampilkan, menskalakan, dan memfilter gambar (nearest, bilinear, sharp bilinear, CRT). Kalau WebGL tidak tersedia, otomatis kembali ke Software.
+- **Hardware (GPU / WebGL)**: VRAM mentah dikirim ke GPU dan konversi warna, skala, serta filter (nearest, bilinear, sharp bilinear, CRT) dikerjakan shader. Kalau WebGL tidak tersedia, otomatis kembali ke Software.
 
-Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Audio memakai **AudioWorklet** dengan sinkronisasi kecepatan berbasis buffer.
+Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Di perangkat multi-core, **emulasi GPU berjalan di thread terpisah**: CPU mengerjakan frame berikutnya sementara GPU menggambar frame sekarang. Hasilnya tetap identik dengan satu thread (diuji byte per byte). Mode ini butuh `SharedArrayBuffer`; karena GitHub Pages tidak bisa mengirim header COOP/COEP, `web/sw.js` menambahkannya, dan halaman dimuat ulang sekali pada kunjungan pertama. Bisa dimatikan di Pengaturan → Sistem. Audio memakai **AudioWorklet** dengan sinkronisasi kecepatan berbasis buffer.
 
 ### Pengaturan lain
 - **Sistem:** BIOS, batas kecepatan (50%–200%/tanpa batas), fast-forward, pause saat tab tidak aktif, overlay FPS.

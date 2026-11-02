@@ -1,4 +1,4 @@
-import { Presenter } from './presenter.js';
+import { Presenter, offscreenSupported } from './presenter.js';
 import { prepareGame } from './disc.js';
 import { kv } from './storage.js';
 import { listSaves, freeBlocks, deleteSave, importCard } from './memcard.js';
@@ -22,7 +22,7 @@ const DEFAULTS = {
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
   hotkeys: { ...DEFAULT_HOTKEYS },
   cardMode: ['shared', 'shared'],
-  saveGames: true, autosave: true,
+  saveGames: true, autosave: true, gpuThread: 'auto',
   touchMode: 'auto', touchOpacity: 60, touchStick: false, touchHaptics: true,
 };
 
@@ -72,6 +72,8 @@ worker.onmessage = async (e) => {
   switch (m.type) {
     case 'ready':
       ready = true;
+      gpuThreaded = !!m.threaded;
+      updateThreadHint();
       await restoreBios();
       for (let s = 0; s < 2; s++) await loadCardIntoCore(s, 'shared');
       renderLibrary();
@@ -91,7 +93,7 @@ worker.onmessage = async (e) => {
         const s = m;
         const draw = s.drawMs ?? presenter.drawMs;
         $('#overlay').textContent =
-          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}${presenter.offscreen ? ' · offscreen' : ''}\n` +
+          `${s.fps.toFixed(1)} FPS · ${Math.round(s.speed)}% · ${presenter.mode === 'gpu' ? 'GPU' : 'CPU'}${s.threaded ? ' · GPU thread' : presenter.offscreen ? ' · offscreen' : ''}\n` +
           `emulasi ${s.emuMs.toFixed(1)} ms · render ${s.renderMs.toFixed(1)} ms · disc ${s.discMs.toFixed(1)} ms · layar ${draw.toFixed(1)} ms\n` +
           `frame telat ${s.late}/detik · jeda terlama ${s.maxGap.toFixed(0)} ms`;
       }
@@ -134,7 +136,8 @@ worker.onmessage = async (e) => {
   }
 };
 worker.onerror = (e) => toast('Worker gagal dimuat: ' + (e.message || 'pastikan diakses lewat server http'), true, 8000);
-post({ type: 'init', settings });
+post({ type: 'init', settings, canOffscreen: offscreenSupported });
+let gpuThreaded = false;
 
 // ---------------- audio ----------------
 let audioCtx = null;
@@ -635,6 +638,7 @@ function syncForm() {
     else el.value = String(v);
   });
   $('#volOut').textContent = settings.volume + '%';
+  updateThreadHint();
   syncPort();
   updateRendererHint();
 }
@@ -647,6 +651,17 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     applySettings();
   });
 });
+
+function updateThreadHint() {
+  const h = $('#threadHint');
+  if (!h) return;
+  const cores = navigator.hardwareConcurrency || 1;
+  if (gpuThreaded) h.textContent = `Aktif: emulasi GPU berjalan paralel di thread terpisah (${cores} core terdeteksi).`;
+  else if (settings.gpuThread === 'off') h.textContent = 'Mati: semua emulasi di satu thread.';
+  else if (!window.crossOriginIsolated) h.textContent = 'Belum aktif: halaman perlu dimuat ulang sekali agar mode multi-thread tersedia.';
+  else if (cores < 2) h.textContent = 'Tidak aktif: perangkat hanya punya 1 core.';
+  else h.textContent = 'Tidak tersedia di browser ini; memakai satu thread.';
+}
 
 function updateRendererHint() {
   const h = $('#rendererHint');

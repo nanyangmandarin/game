@@ -108,16 +108,53 @@ impl Emulator {
         self.psx.load_exe(data).map_err(|e| JsValue::from_str(&e))
     }
 
-    pub fn save_state(&self) -> Vec<u8> {
+    pub fn save_state(&mut self) -> Vec<u8> {
+        self.psx.bus.gpu_flush_sync();
         self.psx.save_state()
     }
 
     pub fn load_state(&mut self, data: &[u8]) -> Result<(), JsValue> {
-        self.psx.load_state(data).map_err(|e| JsValue::from_str(&e))
+        self.psx.load_state(data).map_err(|e| JsValue::from_str(&e))?;
+        if self.psx.bus.gpu.threaded {
+            self.psx.bus.gpu.rec_state();
+        }
+        Ok(())
     }
 
     pub fn reset(&mut self) {
         self.psx.reset();
+        if self.psx.bus.gpu.threaded {
+            self.psx.bus.gpu.rec_state();
+        }
+    }
+
+    /// Move rasterization to a GPU thread. `sync(out: Uint32Array, vram: Uint16Array)` must
+    /// deliver `out` (command records ending with a SYNC record) to that thread, wait for it,
+    /// and copy its VRAM into `vram`.
+    pub fn enable_gpu_thread(&mut self, sync: js_sys::Function) {
+        self.psx.bus.gpu_sync = Some(Box::new(move |out: &[u32], vram: &mut [u16]| {
+            // SAFETY: the views are only used during this synchronous call; no wasm allocation happens meanwhile.
+            let o = unsafe { js_sys::Uint32Array::view(out) };
+            let v = unsafe { js_sys::Uint16Array::view_mut_raw(vram.as_mut_ptr(), vram.len()) };
+            let _ = sync.call2(&JsValue::NULL, &o, &v);
+        }));
+        self.psx.bus.gpu.threaded = true;
+        self.psx.bus.gpu.rec_state();
+    }
+
+    pub fn gpu_threaded(&self) -> bool {
+        self.psx.bus.gpu.threaded
+    }
+
+    /// Recorded GPU command stream (threaded mode). Read it via `gpu_out_ptr/len`, then clear.
+    pub fn gpu_out_ptr(&self) -> *const u32 {
+        self.psx.bus.gpu.out.as_ptr()
+    }
+    pub fn gpu_out_len(&self) -> usize {
+        self.psx.bus.gpu.out.len()
+    }
+    pub fn gpu_out_clear(&mut self) {
+        let _ = self.psx.bus.gpu.take_out();
     }
 
     pub fn run_frame(&mut self) {
@@ -129,6 +166,7 @@ impl Emulator {
 
     /// Render the current display to an RGBA buffer. Returns false if size is zero.
     pub fn render(&mut self, full_vram: bool) -> bool {
+        self.psx.bus.gpu_flush_sync();
         let (w, h) = self.psx.bus.gpu.render(&mut self.frame, full_vram);
         self.fw = w;
         self.fh = h;
@@ -234,6 +272,9 @@ impl Emulator {
 
     pub fn set_dither(&mut self, on: bool) {
         self.psx.bus.gpu.opt_dither = on;
+        if self.psx.bus.gpu.threaded {
+            self.psx.bus.gpu.rec(gpu::REC_OPT, &[on as u32]);
+        }
     }
     pub fn set_volume(&mut self, v: f32) {
         self.psx.bus.spu.master_volume = v.clamp(0.0, 2.0);
@@ -268,6 +309,132 @@ impl Emulator {
     /// Raw VRAM (1024x512, 16-bit) for GPU-side presentation / debugging.
     pub fn vram_ptr(&self) -> *const u16 {
         self.psx.bus.gpu.vram.as_ptr()
+    }
+}
+
+/// GPU thread side: owns the authoritative VRAM and rasterizes recorded commands.
+#[wasm_bindgen]
+pub struct GpuBackend {
+    gpu: gpu::Gpu,
+    queue: Vec<u32>,
+    pos: usize,
+    frame: Vec<u8>,
+    fw: u32,
+    fh: u32,
+    present: bool,
+}
+
+#[wasm_bindgen]
+impl GpuBackend {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> GpuBackend {
+        GpuBackend { gpu: gpu::Gpu::new(), queue: Vec::new(), pos: 0, frame: Vec::new(), fw: 0, fh: 0, present: false }
+    }
+
+    /// Append command records received from the CPU side.
+    pub fn feed(&mut self, data: &[u32]) {
+        if self.pos > 0 && self.pos == self.queue.len() {
+            self.queue.clear();
+            self.pos = 0;
+        }
+        self.queue.extend_from_slice(data);
+    }
+
+    /// Process records until an event: 0 = need more data, 1 = frame end, 2 = sync request.
+    pub fn step(&mut self) -> u32 {
+        loop {
+            if self.pos >= self.queue.len() {
+                self.queue.clear();
+                self.pos = 0;
+                return 0;
+            }
+            let hdr = self.queue[self.pos];
+            let len = (hdr & 0xFF_FFFF) as usize;
+            if self.pos + 1 + len > self.queue.len() {
+                // incomplete record: keep the tail for the next feed
+                self.queue.drain(..self.pos);
+                self.pos = 0;
+                return 0;
+            }
+            let start = self.pos + 1;
+            self.pos = start + len;
+            match hdr >> 24 {
+                gpu::REC_GP0 => {
+                    for k in start..start + len {
+                        let w = self.queue[k];
+                        self.gpu.gp0(w);
+                    }
+                }
+                gpu::REC_GP1 => {
+                    let w = self.queue[start];
+                    self.gpu.gp1(w);
+                }
+                gpu::REC_FRAME => {
+                    self.present = len == 0 || self.queue[start] != 0;
+                    return 1;
+                }
+                gpu::REC_SYNC => return 2,
+                gpu::REC_OPT => self.gpu.opt_dither = self.queue[start] != 0,
+                gpu::REC_STATE => {
+                    let n = self.queue[start] as usize;
+                    let bytes: Vec<u8> = self.queue[start + 1..start + len].iter().flat_map(|w| w.to_le_bytes()).take(n).collect();
+                    if let Ok(g) = bincode::deserialize::<gpu::Gpu>(&bytes) {
+                        let dither = self.gpu.opt_dither;
+                        self.gpu = g;
+                        self.gpu.opt_dither = dither;
+                        self.gpu.threaded = false;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Whether the last frame-end record asked for the frame to be shown.
+    pub fn present(&self) -> bool {
+        self.present
+    }
+
+    pub fn vram_ptr(&self) -> *const u16 {
+        self.gpu.vram.as_ptr()
+    }
+
+    pub fn display_info(&self) -> Vec<u32> {
+        let g = &self.gpu;
+        let (w, h) = g.display_size();
+        vec![g.disp_x, g.disp_y, w, h, g.depth24 as u32, g.disp_on as u32]
+    }
+
+    pub fn render(&mut self, full_vram: bool) -> bool {
+        let (w, h) = self.gpu.render(&mut self.frame, full_vram);
+        self.fw = w;
+        self.fh = h;
+        w > 0 && h > 0
+    }
+    pub fn frame_ptr(&self) -> *const u8 {
+        self.frame.as_ptr()
+    }
+    pub fn frame_len(&self) -> usize {
+        self.frame.len()
+    }
+    pub fn frame_width(&self) -> u32 {
+        self.fw
+    }
+    pub fn frame_height(&self) -> u32 {
+        self.fh
+    }
+}
+
+impl GpuBackend {
+    /// Native access to the authoritative VRAM (tests).
+    pub fn vram(&self) -> &[u16] {
+        &self.gpu.vram
+    }
+}
+
+impl Default for GpuBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

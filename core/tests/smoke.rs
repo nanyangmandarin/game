@@ -192,3 +192,61 @@ fn bios_state_roundtrip() {
     assert!(a.bus.ram == b.bus.ram, "RAM identical");
     println!("state size: {} KB", st.len() / 1024);
 }
+
+/// Threaded GPU (frontend records commands, backend rasterizes) must produce exactly the
+/// same VRAM as single-threaded rendering, including across a save/load state.
+#[test]
+fn threaded_gpu_matches_single_thread() {
+    use ps1core::GpuBackend;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let Ok(path) = std::env::var("PS1_BIOS") else { return };
+    let bios = std::fs::read(path).unwrap();
+
+    let mut a = Psx::new();
+    a.load_bios(&bios).unwrap();
+    for _ in 0..900 { a.run_frame(); }
+
+    let mut b = Psx::new();
+    b.load_bios(&bios).unwrap();
+    let be = Rc::new(RefCell::new(GpuBackend::new()));
+    let be2 = be.clone();
+    b.bus.gpu.threaded = true;
+    b.bus.gpu.rec_state();
+    b.bus.gpu_sync = Some(Box::new(move |out: &[u32], vram: &mut [u16]| {
+        let mut g = be2.borrow_mut();
+        g.feed(out);
+        loop {
+            match g.step() {
+                0 => break,
+                2 => vram.copy_from_slice(g.vram()),
+                _ => {}
+            }
+        }
+    }));
+    let drain = |b: &mut Psx, be: &Rc<RefCell<GpuBackend>>| {
+        let out = b.bus.gpu.take_out();
+        let mut g = be.borrow_mut();
+        g.feed(&out);
+        while g.step() != 0 {}
+    };
+    let mut saved = None;
+    for f in 0..900 {
+        b.run_frame();
+        drain(&mut b, &be);
+        if f == 450 {
+            b.bus.gpu_flush_sync();
+            saved = Some(b.save_state());
+        }
+    }
+    assert!(be.borrow().vram() == &a.bus.gpu.vram[..], "threaded VRAM differs");
+
+    // reload the mid-run state in threaded mode and run to the end again
+    b.load_state(saved.as_ref().unwrap()).unwrap();
+    b.bus.gpu.rec_state();
+    for _ in 451..900 {
+        b.run_frame();
+        drain(&mut b, &be);
+    }
+    assert!(be.borrow().vram() == &a.bus.gpu.vram[..], "threaded VRAM differs after state load");
+}

@@ -1,8 +1,55 @@
 // Emulator worker: owns the WASM core, paces frames, streams video/audio to the UI.
 import init, { Emulator } from '../pkg/ps1core.js';
 import { Painter } from './painter.js';
+import { Ring, createRingBuffer } from './ring.js';
 
 let painter = null; // draws directly when the page transferred an OffscreenCanvas
+
+// ---- multi-threaded GPU (needs cross-origin isolation for SharedArrayBuffer) ----
+const REC_FRAME = 3;
+let gpuWorker = null;
+let ring = null;
+let vramShared = null;
+let syncTarget = 0;
+let framesSent = 0;
+let gpuDrawMs = null;
+
+function startGpuThread() {
+  const ringSab = createRingBuffer();
+  const vramSab = new SharedArrayBuffer(1024 * 512 * 2);
+  ring = new Ring(ringSab);
+  vramShared = new Uint16Array(vramSab);
+  gpuWorker = new Worker(new URL('./gpu-worker.js', import.meta.url), { type: 'module' });
+  gpuWorker.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === 'gstats') gpuDrawMs = m.drawMs;
+    else postMessage(m); // renderer / error -> page
+  };
+  gpuWorker.onerror = (e) => postMessage({ type: 'error', message: 'GPU thread gagal: ' + (e.message || '') });
+  gpuWorker.postMessage({ type: 'init', ringSab, vramSab });
+}
+
+/** Called by the core when it needs current VRAM (VRAM->CPU reads, save states, snapshots). */
+function gpuSync(out, vram) {
+  ring.push(out); // ends with a SYNC record
+  syncTarget = (syncTarget + 1) | 0;
+  if (!ring.waitCounter(2, syncTarget, 2000)) {
+    postMessage({ type: 'error', message: 'GPU thread tidak merespons (sync).' });
+    return;
+  }
+  vram.set(vramShared);
+}
+
+/** Send this frame's recorded GPU commands plus a frame-end marker to the GPU thread. */
+function flushGpu(present) {
+  const n = emu.gpu_out_len();
+  if (n) ring.push(new Uint32Array(wasm.memory.buffer, emu.gpu_out_ptr(), n));
+  emu.gpu_out_clear();
+  ring.push(new Uint32Array([(REC_FRAME << 24) | 1, present ? 1 : 0]));
+  framesSent = (framesSent + 1) | 0;
+  // keep at most 2 frames in flight so input latency stays low
+  ring.waitCounter(3, (framesSent - 2) | 0, 200);
+}
 
 let wasm = null;
 let emu = null;
@@ -124,6 +171,21 @@ function runOne(present) {
   if (frameCount % 30 === 0) flushCards();
 
   if (present && frameskip > 0 && frameCount % (frameskip + 1) !== 0) present = false;
+  if (gpuWorker) {
+    const t1 = performance.now();
+    if (present) {
+      perf.presented++;
+      if (perf.lastShow) {
+        const gap = t1 - perf.lastShow;
+        if (gap > 1500 / fps()) perf.late++;
+        if (gap > perf.maxGap) perf.maxGap = gap;
+      }
+      perf.lastShow = t1;
+    }
+    flushGpu(present);
+    perf.render += performance.now() - t1;
+    return;
+  }
   if (present) {
     const t1 = performance.now();
     perf.presented++;
@@ -206,7 +268,7 @@ function loop() {
     postMessage({
       type: 'stats', fps: emuFps, speed: emuFps / fps() * 100,
       emuMs: perf.emu / n, renderMs: perf.render / Math.max(1, perf.presented), discMs: perf.disc / n,
-      pixels: st[0] / n, sectors: st[2], drawMs: painter ? painter.drawMs : null, late: perf.late, maxGap: perf.maxGap,
+      pixels: st[0] / n, sectors: st[2], drawMs: gpuWorker ? gpuDrawMs : painter ? painter.drawMs : null, threaded: !!gpuWorker, late: perf.late, maxGap: perf.maxGap,
     });
     perf.emu = perf.render = perf.disc = perf.frames = perf.presented = perf.late = perf.maxGap = 0;
     statFrames = 0;
@@ -236,6 +298,7 @@ function applySettings(s) {
   speed = s.speed ?? 1;
   ffSpeed = s.ffSpeed ?? 3;
   fullVram = !!s.showVram;
+  if (gpuWorker) gpuWorker.postMessage({ type: 'opts', fullVram });
   frameskip = s.frameskip ?? 0;
   audioEnabled = s.audioEnabled !== false;
   muteOnFF = s.muteOnFF !== false;
@@ -260,14 +323,21 @@ onmessage = async (e) => {
   try {
     switch (m.type) {
       case 'init': {
+        const wantThread = m.settings?.gpuThread !== 'off' && m.canOffscreen &&
+          self.crossOriginIsolated && typeof SharedArrayBuffer !== 'undefined' && (navigator.hardwareConcurrency || 1) >= 2;
+        if (wantThread) startGpuThread(); // before awaiting, so the canvas message can be forwarded
         wasm = await init({ module_or_path: new URL('../pkg/ps1core_bg.wasm', import.meta.url) });
         emu = new Emulator();
+        if (gpuWorker) emu.enable_gpu_thread(gpuSync);
         applySettings(m.settings);
-        postMessage({ type: 'ready' });
+        postMessage({ type: 'ready', threaded: !!gpuWorker });
         break;
       }
       case 'canvas':
-        if (m.canvas) {
+        if (gpuWorker) {
+          gpuWorker.postMessage(m, m.canvas ? [m.canvas] : []);
+          if (m.canvas) gpuWorker.postMessage({ type: 'opts', fullVram });
+        } else if (m.canvas) {
           painter = new Painter(m.canvas, m.kind);
           if (!painter.failed) {
             painter.setOptions(m.opts || {});
@@ -280,10 +350,12 @@ onmessage = async (e) => {
         }
         break;
       case 'resize':
-        if (painter) painter.setSize(m.w, m.h);
+        if (gpuWorker) gpuWorker.postMessage(m);
+        else if (painter) painter.setSize(m.w, m.h);
         break;
       case 'present':
-        if (painter) painter.setOptions(m.opts);
+        if (gpuWorker) gpuWorker.postMessage(m);
+        else if (painter) painter.setOptions(m.opts);
         break;
       case 'snapshot': {
         let snap = painter ? painter.snapshot() : null;

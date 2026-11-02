@@ -59,6 +59,9 @@ impl Psx {
             new.bus.pad.pads[i].axes = old.pad.pads[i].axes;
         }
         new.bus.gpu.opt_dither = old.gpu.opt_dither;
+        new.bus.gpu.threaded = old.gpu.threaded;
+        new.bus.gpu.out = std::mem::take(&mut old.gpu.out);
+        new.bus.gpu_sync = old.gpu_sync.take();
         new.bus.spu.master_volume = old.spu.master_volume;
         new.bus.spu.reverb_enabled = old.spu.reverb_enabled;
         new.bus.spu.interp = old.spu.interp;
