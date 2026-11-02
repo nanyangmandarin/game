@@ -9,7 +9,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | CPU MIPS R3000A (interpreter, load/branch delay slot, exception, COP0) | ✅ |
 | GTE (koprosesor 3D, semua perintah + flag) | ✅ |
 | GPU: poligon flat/gouraud/bertekstur (4/8/15-bit, CLUT, texture window), sprite, garis, semi-transparansi, mask bit, dithering, transfer VRAM, mode 24-bit | ✅ |
-| CD-ROM: ISO, BIN/CUE (multi-track, multi-file), **CHD**, **PBP** (termasuk multi-disc), deteksi region, CD-DA, XA-ADPCM | ✅ |
+| CD-ROM: ISO, BIN/CUE (multi-track, multi-file), **CHD**, **PBP** (termasuk multi-disc), **ECM** (`.iso.ecm`/`.bin.ecm`, juga di dalam CUE), deteksi region, CD-DA, XA-ADPCM | ✅ |
 | Ganti disc untuk game multi-disc (PBP multi-disc atau file disc terpisah) | ✅ |
 | SPU: 24 voice ADPCM, ADSR, noise, pitch modulation, reverb, mixing CD audio | ✅ |
 | MDEC (video FMV) | ✅ |
@@ -72,6 +72,7 @@ Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan →
    - `.cue` **bersama** semua file `.bin`-nya (pilih sekaligus), atau
    - `.chd` (MAME/chdman: codec LZMA, Deflate, FLAC, Zstd), atau
    - `.pbp` (EBOOT PS1 dari PSP/PS3, termasuk multi-disc), atau
+   - `.iso.ecm` / `.bin.ecm` (ECM; untuk game multi-track pilih `.cue` bersama `.bin.ecm`-nya), atau
    - `.exe` (PS-X EXE, untuk homebrew; bisa tanpa BIOS).
 
    Game multi-disc: saat game meminta disc berikutnya, tekan **💿 Disc** lalu pilih disc (PBP) atau file disc berikutnya.

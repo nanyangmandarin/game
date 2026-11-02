@@ -73,7 +73,7 @@
       <div class="wel-actions"><button id="btnOpen" class="primary">+ Tambah / Buka Game…</button> <button id="btnBiosBoot" title="Menu BIOS: kelola memory card, CD player">Jalankan BIOS (tanpa disc)</button></div>
       <ol>
         <li id="stepBios"><b>BIOS:</b> <span id="biosStatus">belum ada</span> — <button id="btnBios" class="link">pilih file BIOS</button></li>
-        <li><b>Game:</b> klik <i>Tambah / Buka Game</i> atau seret file ISO, BIN+CUE, CHD, atau PBP ke sini. Game disimpan di browser, jadi tetap ada setelah refresh.</li>
+        <li><b>Game:</b> klik <i>Tambah / Buka Game</i> atau seret file ISO, BIN+CUE, CHD, PBP, atau ECM ke sini. Game disimpan di browser, jadi tetap ada setelah refresh.</li>
       </ol>
       <p class="muted" id="installHint"></p>
       <p class="muted">Semua berjalan di perangkat Anda (WebAssembly); tidak ada file yang diunggah ke server. BIOS (mis. SCPH-1001 / 5501 / 7502, 512 KB) harus diambil dari konsol milik Anda sendiri.</p>
@@ -82,7 +82,7 @@
     <div id="toast"></div>
   </main>
 
-  <input type="file" id="fileGame" multiple accept=".iso,.bin,.img,.cue,.chd,.pbp,.exe,.psexe,.psx" hidden>
+  <input type="file" id="fileGame" multiple accept=".iso,.bin,.img,.cue,.chd,.pbp,.ecm,.exe,.psexe,.psx" hidden>
   <input type="file" id="fileBios" accept=".bin,.rom" hidden>
   <input type="file" id="fileCard" accept=".mcr,.mcd,.srm,.gme,.ps,.bin" hidden>
 
@@ -234,7 +234,7 @@
       </div>
     </form>
   </dialog>
-  <input type="file" id="fileDisc" multiple accept=".iso,.bin,.img,.cue,.chd,.pbp" hidden>
+  <input type="file" id="fileDisc" multiple accept=".iso,.bin,.img,.cue,.chd,.pbp,.ecm" hidden>
 
   <dialog id="cheatDlg">
     <form method="dialog" class="dlg">

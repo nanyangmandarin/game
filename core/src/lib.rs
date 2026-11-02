@@ -5,6 +5,7 @@ pub mod cdrom;
 pub mod cheats;
 pub mod cpu;
 pub mod disc_image;
+pub mod ecm;
 pub mod gpu;
 pub mod gte;
 pub mod mdec;
@@ -55,13 +56,15 @@ pub struct Emulator {
     fh: u32,
     audio: Vec<i16>,
     rewind: rewind::Rewind,
+    /// ECM files decoded for the next `insert_disc` (file index -> decoder)
+    ecm_pending: Vec<(u32, ecm::EcmFile)>,
 }
 
 #[wasm_bindgen]
 impl Emulator {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Emulator {
-        Emulator { psx: Psx::new(), frame: Vec::new(), fw: 0, fh: 0, audio: Vec::new(), rewind: Default::default() }
+        Emulator { psx: Psx::new(), frame: Vec::new(), fw: 0, fh: 0, audio: Vec::new(), rewind: Default::default(), ecm_pending: Vec::new() }
     }
 
     pub fn load_bios(&mut self, data: &[u8]) -> Result<(), JsValue> {
@@ -90,9 +93,31 @@ impl Emulator {
                 file_offset: t[6] as u64 | ((t[7] as u64) << 32),
             })
             .collect();
-        let disc = Disc::new(list, Box::new(JsReader { f: reader }));
+        let raw = ecm::SharedReader(std::rc::Rc::new(std::cell::RefCell::new(Box::new(JsReader { f: reader }) as Box<dyn DiscReader>)));
+        let pending = std::mem::take(&mut self.ecm_pending);
+        let r: Box<dyn DiscReader> = if pending.is_empty() { Box::new(raw) } else { Box::new(ecm::MuxReader { raw, ecm: pending }) };
+        let disc = Disc::new(list, r);
         self.psx.bus.cd.insert(Some(disc));
         Ok(())
+    }
+
+    /// Scan an ECM file (index `file` of the reader) before `insert_disc`; returns its decoded size.
+    pub fn prepare_ecm(&mut self, reader: js_sys::Function, file: u32, size: f64) -> Result<f64, JsValue> {
+        let r = ecm::SharedReader(std::rc::Rc::new(std::cell::RefCell::new(Box::new(JsReader { f: reader }) as Box<dyn DiscReader>)));
+        let e = ecm::EcmFile::open(r, file, size as u64).map_err(|e| JsValue::from_str(&e))?;
+        let n = e.decoded_size as f64;
+        self.ecm_pending.retain(|(f, _)| *f != file);
+        self.ecm_pending.push((file, e));
+        Ok(n)
+    }
+
+    /// First bytes of a prepared ECM file's decoded data (sector-size detection).
+    pub fn ecm_peek(&mut self, file: u32, len: u32) -> Vec<u8> {
+        let mut out = vec![0u8; len as usize];
+        if let Some((_, e)) = self.ecm_pending.iter_mut().find(|(f, _)| *f == file) {
+            e.read_at(0, &mut out);
+        }
+        out
     }
 
     /// Insert a compressed image. `kind`: "pbp" | "chd". `size` is the file size in bytes.
@@ -102,6 +127,18 @@ impl Emulator {
         let img = match kind {
             "pbp" => disc_image::open_pbp(r, size as u64, disc),
             "chd" => disc_image::open_chd(r, size as u64),
+            "ecm" => {
+                // single .iso.ecm / .bin.ecm: one data track
+                let shared = ecm::SharedReader(std::rc::Rc::new(std::cell::RefCell::new(r)));
+                let mut e = ecm::EcmFile::open(shared.clone(), 0, size as u64).map_err(|e| JsValue::from_str(&e))?;
+                let mut head = [0u8; 16];
+                e.read_at(0, &mut head);
+                let raw = head[0] == 0 && head[1..11].iter().all(|&b| b == 0xFF) && head[11] == 0 && e.decoded_size % 2352 == 0;
+                let ss: u32 = if raw { 2352 } else { 2048 };
+                let track = Track { number: 1, file: 0, start: 150, length: (e.decoded_size / ss as u64) as u32, sector_size: ss, audio: false, file_offset: 0 };
+                let mux = ecm::MuxReader { raw: shared, ecm: vec![(0, e)] };
+                Ok(disc_image::OpenedImage { tracks: vec![track], reader: Box::new(mux), disc_count: 1 })
+            }
             _ => Err(format!("Format {kind} tidak dikenal")),
         }
         .map_err(|e| JsValue::from_str(&e))?;

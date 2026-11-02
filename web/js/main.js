@@ -119,6 +119,9 @@ worker.onmessage = async (e) => {
       updateDiscButton();
       toast(`${m.resumed ? 'Melanjutkan' : 'Berjalan'}: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
       break;
+    case 'status':
+      toast(m.message, false, 2500);
+      break;
     case 'discSwapped':
       currentDisc = m.disc;
       discCount = m.discCount || discCount;
@@ -377,7 +380,7 @@ async function bootGame(meta, files, { resume = false } = {}) {
     const rec = await kv.get(`state:${gameId}:auto`);
     if (rec) state = { data: rec.data.buffer.slice(0), gz: rec.gz };
   }
-  post({ type: 'boot', files: meta.exe ? [] : files, tracks: meta.tracks, container: meta.container, disc: meta.disc || 0, exe, gameId, cards, state });
+  post({ type: 'boot', files: meta.exe ? [] : files, tracks: meta.tracks, container: meta.container, cue: meta.cue, disc: meta.disc || 0, exe, gameId, cards, state });
   $('#btnDisc').classList.toggle('hidden', !!meta.exe || meta.id === 'bios');
   running = true;
   userPaused = false;
@@ -394,7 +397,7 @@ async function openGame(picked) {
   try {
     const g = await prepareGame(picked);
     const files = g.exe ? [g.exe] : g.files;
-    const meta = { id: g.id, dir: dirName(g.id), title: g.title, files: files.map((f) => f.name), tracks: g.tracks, container: g.container || null, exe: !!g.exe };
+    const meta = { id: g.id, dir: dirName(g.id), title: g.title, files: files.map((f) => f.name), tracks: g.tracks, container: g.container || null, cue: g.cue || null, exe: !!g.exe };
     const hasAuto = !!(await kv.get(`state:${g.id}:auto`));
     const resume = hasAuto && confirm(`Ada progres tersimpan untuk "${g.title}". Lanjutkan dari situ?\n(Batal = mulai dari awal)`);
     await bootGame(meta, files, { resume });
@@ -542,7 +545,7 @@ $('#fileDisc').onchange = async (e) => {
     const g = await prepareGame(picked);
     if (g.exe) throw new Error('Pilih file disc (ISO/BIN/CUE/CHD/PBP).');
     lastFiles = g.files;
-    post({ type: 'swapDisc', files: g.files, tracks: g.tracks, container: g.container || null, disc: 0 });
+    post({ type: 'swapDisc', files: g.files, tracks: g.tracks, container: g.container || null, cue: g.cue, disc: 0 });
     $('#discDlg').close();
   } catch (err) {
     toast(err.message, true);

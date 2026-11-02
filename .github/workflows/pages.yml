@@ -38,6 +38,23 @@ jobs:
           head -c 300000 /dev/urandom > isoroot/SLUS_011.15 && genisoimage -quiet -o serial.iso isoroot
       - name: Tests
         run: PS1_TESTIMG_DIR="$RUNNER_TEMP/imgs" cargo test --manifest-path core/Cargo.toml --release
+      - name: Verify ECM sector rebuild (ECC accepted by MAME chdman)
+        run: |
+          OUT="$RUNNER_TEMP/ecmcheck"; mkdir -p "$OUT"
+          PS1_ECM_OUT="$OUT/good.bin" cargo test --manifest-path core/Cargo.toml --release --lib dump_rebuilt_sectors
+          python3 - "$OUT" <<'PY'
+          import sys
+          d = sys.argv[1]
+          b = bytearray(open(f"{d}/good.bin", "rb").read())
+          for i in range(len(b) // 2352):
+              b[i * 2352 + 2300] ^= 0x5A
+          open(f"{d}/bad.bin", "wb").write(b)
+          for n in ("good", "bad"):
+              open(f"{d}/{n}.cue", "w").write(f'FILE "{n}.bin" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n')
+          PY
+          for n in good bad; do chdman createcd -f -i "$OUT/$n.cue" -o "$OUT/$n.chd" -c cdzl; done
+          g=$(stat -c %s "$OUT/good.chd"); b=$(stat -c %s "$OUT/bad.chd")
+          echo "good=$g bad=$b"; test $((g * 2)) -lt "$b"
       - name: Build WASM
         run: ./build.sh
       - uses: actions/upload-pages-artifact@v3

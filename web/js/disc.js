@@ -32,9 +32,11 @@ function baseName(p) {
  */
 export async function prepareGame(picked) {
   const byName = new Map(picked.map((f) => [f.name.toLowerCase(), f]));
+  // a CUE referencing "game.bin" also matches "game.bin.ecm"
+  for (const f of picked) if (/\.ecm$/i.test(f.name)) byName.set(f.name.toLowerCase().replace(/\.ecm$/, ''), f);
   const cue = picked.find((f) => /\.cue$/i.test(f.name));
   const exe = picked.find((f) => /\.(exe|psexe|psx)$/i.test(f.name));
-  const unsupported = picked.find((f) => /\.(ecm|7z|zip|rar|ape|mds)$/i.test(f.name));
+  const unsupported = picked.find((f) => /\.(7z|zip|rar|ape|mds)$/i.test(f.name));
   const packed = picked.find((f) => /\.(chd|pbp)$/i.test(f.name));
   if (packed) {
     const container = packed.name.split('.').pop().toLowerCase();
@@ -43,14 +45,25 @@ export async function prepareGame(picked) {
 
   if (cue) {
     const text = await cue.text();
-    return { ...(await parseCue(text, byName)), exe: null, title: cue.name.replace(/\.cue$/i, ''), id: idFrom(cue.name) };
+    const title = cue.name.replace(/\.cue$/i, '');
+    const files = cueFiles(text, byName);
+    if (files.some((f) => /\.ecm$/i.test(f.name))) {
+      // decoded sizes are only known after the emulator scans the ECM files
+      return { files, tracks: null, container: 'cue-ecm', cue: text, exe: null, title, id: idFrom(cue.name) };
+    }
+    return { files, tracks: cueTracks(text, files.map((f) => f.size)), exe: null, title, id: idFrom(cue.name) };
+  }
+  const ecm = picked.find((f) => /\.ecm$/i.test(f.name));
+  if (ecm) {
+    const title = ecm.name.replace(/\.ecm$/i, '').replace(/\.[^.]+$/, '');
+    return { files: [ecm], tracks: null, container: 'ecm', exe: null, title, id: idFrom(title) };
   }
   if (exe && !picked.some((f) => /\.(iso|bin|img)$/i.test(f.name))) {
     return { files: [], tracks: null, exe, title: exe.name, id: idFrom(exe.name) };
   }
   const img = picked.find((f) => /\.(iso|bin|img|mdf)$/i.test(f.name));
   if (!img) {
-    if (unsupported) throw new Error(`Format ${unsupported.name.split('.').pop().toUpperCase()} belum didukung. Gunakan ISO, BIN/CUE, CHD, PBP, atau EXE.`);
+    if (unsupported) throw new Error(`Format ${unsupported.name.split('.').pop().toUpperCase()} belum didukung. Gunakan ISO, BIN/CUE, CHD, PBP, ECM, atau EXE.`);
     throw new Error('Pilih file ISO, BIN (+CUE), CHD, PBP, atau EXE.');
   }
   const size = await detectSectorSize(img);
@@ -63,8 +76,23 @@ function idFrom(name) {
   return name.replace(/\.[^.]+$/, '').replace(/\s*\((disc|disk|cd)\s*\d+\)/i, '').trim();
 }
 
-async function parseCue(text, byName) {
+/** Files referenced by a CUE sheet, in order. */
+export function cueFiles(text, byName) {
   const files = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!/^FILE\s/i.test(line)) continue;
+    const m = line.match(/^FILE\s+"?(.+?)"?\s+(\w+)$/i);
+    const name = m ? m[1] : line.slice(5);
+    const f = byName.get(baseName(name));
+    if (!f) throw new Error(`File "${baseName(name)}" yang dirujuk CUE tidak ikut dipilih. Pilih .cue bersama semua file .bin-nya.`);
+    files.push(f);
+  }
+  return files;
+}
+
+/** Track table for a CUE sheet given each referenced file's (decoded) size in bytes. */
+export function cueTracks(text, fileSizes) {
   const entries = []; // per track
   let cur = null;
   let fileIdx = -1;
@@ -73,12 +101,7 @@ async function parseCue(text, byName) {
     if (!line) continue;
     const kw = line.split(/\s+/)[0].toUpperCase();
     if (kw === 'FILE') {
-      const m = line.match(/^FILE\s+"?(.+?)"?\s+(\w+)$/i);
-      const name = m ? m[1] : line.slice(5);
-      const f = byName.get(baseName(name));
-      if (!f) throw new Error(`File "${baseName(name)}" yang dirujuk CUE tidak ikut dipilih. Pilih .cue bersama semua file .bin-nya.`);
-      files.push(f);
-      fileIdx = files.length - 1;
+      fileIdx++;
     } else if (kw === 'TRACK') {
       const parts = line.split(/\s+/);
       const type = (parts[2] || '').toUpperCase();
@@ -101,10 +124,10 @@ async function parseCue(text, byName) {
   const rows = [];
   let fileBase = 150; // absolute frame where the current file starts
   let pregapAcc = 0;
-  for (let fi = 0; fi < files.length; fi++) {
+  for (let fi = 0; fi < fileSizes.length; fi++) {
     const inFile = entries.filter((e) => e.file === fi);
     const sizeOf = inFile[0]?.size || 2352;
-    const fileFrames = Math.floor(files[fi].size / sizeOf);
+    const fileFrames = Math.floor(fileSizes[fi] / sizeOf);
     for (let k = 0; k < inFile.length; k++) {
       const t = inFile[k];
       pregapAcc += t.pregap;
@@ -122,5 +145,5 @@ async function parseCue(text, byName) {
     }
     fileBase += fileFrames;
   }
-  return { files, tracks: rows };
+  return rows;
 }

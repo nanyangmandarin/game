@@ -2,6 +2,7 @@
 import init, { Emulator } from '../pkg/ps1core.js';
 import { Painter } from './painter.js';
 import { Ring, createRingBuffer } from './ring.js';
+import { cueTracks } from './disc.js';
 
 let painter = null; // draws directly when the page transferred an OffscreenCanvas
 
@@ -115,6 +116,13 @@ function readDiscInner(file, offset, len) {
     pos += n;
   }
   return pos === len ? out : out.subarray(0, pos);
+}
+
+// ---------------- ECM inside a CUE sheet ----------------
+function insertCueEcm(cueText) {
+  postMessage({ type: 'status', message: 'Menyiapkan file ECM…' });
+  const sizes = discFiles.map((f, i) => (/\.ecm$/i.test(f.name) ? emu.prepare_ecm(readDisc, i, f.size) : f.size));
+  emu.insert_disc(readDisc, new Uint32Array(cueTracks(cueText, sizes)));
 }
 
 // ---------------- memory cards / save states ----------------
@@ -409,7 +417,10 @@ onmessage = async (e) => {
         discFiles = m.files || [];
         emu.reset();
         let discCount = 1;
-        if (m.container) {
+        if (m.container === 'cue-ecm') {
+          insertCueEcm(m.cue);
+        } else if (m.container) {
+          if (m.container === 'ecm') postMessage({ type: 'status', message: 'Menyiapkan file ECM…' });
           discCount = emu.insert_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
         } else if (m.tracks) {
           emu.insert_disc(readDisc, new Uint32Array(m.tracks));
@@ -458,7 +469,8 @@ onmessage = async (e) => {
         cache.clear();
         discFiles = m.files || [];
         let discCount = 1;
-        if (m.container) discCount = emu.swap_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
+        if (m.container === 'cue-ecm') { insertCueEcm(m.cue); emu.open_lid(); }
+        else if (m.container) discCount = emu.swap_disc_image(readDisc, m.container, discFiles[0].size, m.disc || 0);
         else if (m.tracks) { emu.insert_disc(readDisc, new Uint32Array(m.tracks)); emu.open_lid(); }
         postMessage({ type: 'discSwapped', region: emu.disc_region(), serial: emu.disc_serial(), discCount, disc: m.disc || 0 });
         kick();
