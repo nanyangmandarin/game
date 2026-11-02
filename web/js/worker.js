@@ -61,6 +61,8 @@ let ffSpeed = 3;
 let fullVram = false;
 let frameskip = 0;
 let analogToDpad = true;
+let rewinding = false;
+let rewindEnabled = false;
 let audioPort = null;
 let audioFill = 0;
 let audioEnabled = true;
@@ -144,7 +146,12 @@ function fps() {
 
 function runOne(present) {
   const t0 = performance.now();
-  emu.run_frame();
+  if (rewinding) {
+    // step back one snapshot every other frame (~3x real-time with 6-frame snapshots)
+    if ((frameCount & 1) === 0 && !emu.rewind_step()) postMessage({ type: 'rewindEnd' });
+  } else {
+    emu.run_frame();
+  }
   perf.emu += performance.now() - t0;
   perf.frames++;
   frameCount++;
@@ -152,7 +159,7 @@ function runOne(present) {
 
   // audio
   const n = emu.audio_len();
-  if (audioPort && n > 0 && audioEnabled && !(ffActive && muteOnFF)) {
+  if (audioPort && n > 0 && audioEnabled && !rewinding && !(ffActive && muteOnFF)) {
     const src = new Int16Array(wasm.memory.buffer, emu.audio_ptr(), n);
     const f = new Float32Array(n);
     for (let i = 0; i < n; i++) f[i] = src[i] / 32768;
@@ -308,6 +315,7 @@ function applySettings(s) {
   audioTarget = Math.round(44100 * 2 * (s.latency ?? 100) / 1000);
   emu.set_dither(s.dither !== false);
   emu.set_fast_boot(s.fastBoot !== false);
+  if (!!s.rewind !== rewindEnabled) { rewindEnabled = !!s.rewind; emu.set_rewind(rewindEnabled, 6, 120); }
   emu.set_volume((s.volume ?? 100) / 100);
   emu.set_reverb(s.reverb !== false);
   emu.set_interpolation(s.interpolation !== false);
@@ -474,6 +482,10 @@ onmessage = async (e) => {
         break;
       case 'stop':
         running = false;
+        break;
+      case 'rewind':
+        rewinding = !!m.on && rewindEnabled;
+        if (rewinding) kick();
         break;
       case 'ff':
         ffActive = !!m.on;

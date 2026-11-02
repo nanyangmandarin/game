@@ -22,7 +22,7 @@ const DEFAULTS = {
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
   hotkeys: { ...DEFAULT_HOTKEYS },
   cardMode: ['shared', 'shared'],
-  saveGames: true, autosave: true, gpuThread: 'auto', fastBoot: true,
+  saveGames: true, autosave: true, gpuThread: 'auto', fastBoot: true, rewind: false,
   touchMode: 'auto', touchOpacity: 60, touchHaptics: true, analogToDpad: true,
   touchDir: 'dpad', gestures: false, gestureOnly: false, gestureTap: 'cross', gestureTap2: 'circle',
 };
@@ -544,6 +544,18 @@ $('#fileDisc').onchange = async (e) => {
   }
 };
 
+// ---------------- rewind ----------------
+let rewindHinted = false;
+function setRewind(on) {
+  if (!running) return;
+  if (on && !settings.rewind) {
+    if (!rewindHinted) { rewindHinted = true; toast('Rewind belum aktif: Pengaturan → Sistem → Rewind.', true, 5000); }
+    return;
+  }
+  post({ type: 'rewind', on });
+  document.body.classList.toggle('rewinding', on);
+}
+
 // ---------------- cheats ----------------
 let cheats = [];
 let editingCheat = -1;
@@ -746,6 +758,7 @@ const input = new Input(
   (pads) => post({ type: 'input', pads }),
   (action, down) => {
     if (action === 'fastForward') { if (running) post({ type: 'ff', on: down || ffLatched }); return; }
+    if (action === 'rewind') { setRewind(down); return; }
     if (!down) return;
     switch (action) {
       case 'pause': if (running) { userPaused = !paused; setPaused(!paused); } break;
@@ -983,6 +996,7 @@ const touch = new TouchPad($('#stage'), (st) => input.setTouch(st), (action, dow
     case 'menu': if (down) openSettings(); break;
     case 'save': if (down) saveState('quick'); break;
     case 'analog': if (down) post({ type: 'analogToggle', port: 0 }); break;
+    case 'rewind': setRewind(down); break;
     case 'load': if (down) loadState('quick'); break;
   }
 });

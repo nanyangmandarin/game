@@ -31,10 +31,10 @@ export const DEFAULT_PAD = {
 };
 
 export const DEFAULT_HOTKEYS = {
-  pause: 'KeyP', reset: 'F3', saveState: 'F5', loadState: 'F8', fastForward: 'Tab', fullscreen: 'F2', screenshot: 'F9', analog: 'F4', menu: 'Escape',
+  pause: 'KeyP', reset: 'F3', saveState: 'F5', loadState: 'F8', rewind: 'KeyR', fastForward: 'Tab', fullscreen: 'F2', screenshot: 'F9', analog: 'F4', menu: 'Escape',
 };
 export const HOTKEY_LABELS = {
-  pause: 'Pause / Lanjut', reset: 'Reset', saveState: 'Quick save state', loadState: 'Quick load state', fastForward: 'Fast-forward (tahan)', fullscreen: 'Layar penuh',
+  pause: 'Pause / Lanjut', reset: 'Reset', saveState: 'Quick save state', loadState: 'Quick load state', rewind: 'Rewind (tahan)', fastForward: 'Fast-forward (tahan)', fullscreen: 'Layar penuh',
   screenshot: 'Screenshot', analog: 'Toggle Analog (Port 1)', menu: 'Buka/tutup menu',
 };
 
@@ -82,7 +82,7 @@ export class Input {
     const hk = Object.entries(s.hotkeys).find(([, c]) => c === e.code);
     if (hk) {
       e.preventDefault();
-      if (!e.repeat || hk[0] === 'fastForward') this.onHotkey(hk[0], isDown);
+      if (!e.repeat || hk[0] === 'fastForward' || hk[0] === 'rewind') this.onHotkey(hk[0], isDown);
       return;
     }
     const mapped = s.keys.some((m) => Object.values(m).includes(e.code));

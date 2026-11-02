@@ -15,6 +15,7 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | MDEC (video FMV) | ✅ |
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
 | Jalankan BIOS tanpa disc (menu memory card / CD player) | ✅ |
+| Rewind (tahan R / ⏪, ±12 detik, delta snapshot ~15 MB) | ✅ |
 | Cheat GameShark / Action Replay (80/30, 10/11/20/21, D0–D3, E0–E3, C0, 50, C2) per game | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
@@ -81,7 +82,7 @@ Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan →
 | Start / Select | Enter / Backspace | | L3 / R3 | Z / X |
 | Stik kiri | Panah | | Stik kanan | Numpad 8/4/2/6 |
 
-Hotkey: **P** pause, **F5** quick save, **F8** quick load, **Tab** (tahan) fast-forward, **F2** layar penuh, **F3** reset, **F4** toggle analog, **F9** screenshot, **Esc** menu. Gamepad standar (Xbox/PS/dll.) langsung terpetakan; tombol Home/Guide mengaktifkan mode analog.
+Hotkey: **P** pause, **F5** quick save, **F8** quick load, **R** (tahan) rewind, **Tab** (tahan) fast-forward, **F2** layar penuh, **F3** reset, **F4** toggle analog, **F9** screenshot, **Esc** menu. Gamepad standar (Xbox/PS/dll.) langsung terpetakan; tombol Home/Guide mengaktifkan mode analog.
 
 ## Build
 

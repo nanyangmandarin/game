@@ -277,3 +277,28 @@ fn bios_exe_sideload_and_fast_boot() {
     println!("EXE ran after {:?} frames", injected_at);
     assert!(injected_at.is_some(), "EXE was never injected");
 }
+
+/// Rewind: stepping back k snapshots restores exactly the earlier machine state.
+#[test]
+fn rewind_restores_exact_state() {
+    use ps1core::Emulator;
+    let Ok(path) = std::env::var("PS1_BIOS") else { return };
+    let bios = std::fs::read(path).unwrap();
+
+    let mut reference = Emulator::new();
+    reference.load_bios(&bios).unwrap();
+    for _ in 0..540 { reference.run_frame(); }
+    let at540 = reference.save_state();
+
+    let mut e = Emulator::new();
+    e.load_bios(&bios).unwrap();
+    e.set_rewind(true, 6, 120);
+    let t = std::time::Instant::now();
+    for _ in 0..600 { e.run_frame(); }
+    let with = t.elapsed().as_secs_f64() * 1000.0 / 600.0;
+    let info = e.rewind_info();
+    println!("rewind: {} snapshots, {} KB total, {:.2} ms/frame incl. capture", info[0], info[1] / 1024, with);
+    for _ in 0..10 { assert!(e.rewind_step()); }
+    let back = e.save_state();
+    assert!(back == at540, "state after rewinding 10 snapshots must equal frame 540");
+}

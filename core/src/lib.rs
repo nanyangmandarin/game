@@ -10,6 +10,7 @@ pub mod gte;
 pub mod mdec;
 pub mod pad;
 pub mod psx;
+pub mod rewind;
 pub mod spu;
 pub mod timers;
 
@@ -53,13 +54,14 @@ pub struct Emulator {
     fw: u32,
     fh: u32,
     audio: Vec<i16>,
+    rewind: rewind::Rewind,
 }
 
 #[wasm_bindgen]
 impl Emulator {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Emulator {
-        Emulator { psx: Psx::new(), frame: Vec::new(), fw: 0, fh: 0, audio: Vec::new() }
+        Emulator { psx: Psx::new(), frame: Vec::new(), fw: 0, fh: 0, audio: Vec::new(), rewind: Default::default() }
     }
 
     pub fn load_bios(&mut self, data: &[u8]) -> Result<(), JsValue> {
@@ -145,6 +147,7 @@ impl Emulator {
 
     pub fn load_state(&mut self, data: &[u8]) -> Result<(), JsValue> {
         self.psx.load_state(data).map_err(|e| JsValue::from_str(&e))?;
+        self.rewind.clear();
         if self.psx.bus.gpu.threaded {
             self.psx.bus.gpu.rec_state();
         }
@@ -153,6 +156,7 @@ impl Emulator {
 
     pub fn reset(&mut self) {
         self.psx.reset();
+        self.rewind.clear();
         if self.psx.bus.gpu.threaded {
             self.psx.bus.gpu.rec_state();
         }
@@ -189,6 +193,10 @@ impl Emulator {
 
     pub fn run_frame(&mut self) {
         self.psx.run_frame();
+        if self.rewind.due() {
+            let s = self.save_state();
+            self.rewind.push(s);
+        }
         let a = self.psx.bus.spu.take_audio();
         self.audio.clear();
         self.audio.extend_from_slice(&a);
@@ -308,6 +316,37 @@ impl Emulator {
     /// Check one cheat's codes for the editor ("" if valid).
     pub fn validate_cheat(&self, text: &str) -> String {
         cheats::validate(text)
+    }
+
+    /// Rewind: snapshot every `interval` frames, keep up to `max` snapshots.
+    pub fn set_rewind(&mut self, enabled: bool, interval: u32, max: u32) {
+        if !enabled {
+            self.rewind.clear();
+        }
+        self.rewind.enabled = enabled;
+        self.rewind.interval = interval.max(1);
+        self.rewind.max = max.max(1) as usize;
+    }
+
+    /// Go back one snapshot. Returns false when the buffer is empty.
+    pub fn rewind_step(&mut self) -> bool {
+        let state = match self.rewind.pop() {
+            Some(s) => s.to_vec(),
+            None => return false,
+        };
+        if self.psx.load_state(&state).is_err() {
+            return false;
+        }
+        if self.psx.bus.gpu.threaded {
+            self.psx.bus.gpu.rec_state();
+        }
+        let _ = self.psx.bus.spu.take_audio();
+        true
+    }
+
+    /// [snapshots, bytes]
+    pub fn rewind_info(&self) -> Vec<u32> {
+        vec![self.rewind.len() as u32, self.rewind.bytes() as u32]
     }
 
     pub fn set_fast_boot(&mut self, on: bool) {

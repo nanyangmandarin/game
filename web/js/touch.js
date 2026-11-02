@@ -64,6 +64,7 @@ export class TouchPad {
         <button data-act="ff" title="Fast-forward (tahan)">⏩</button>
         <button data-act="save" title="Quick save">💾</button>
         <button data-act="load" title="Quick load">↺</button>
+        <button data-act="rewind" class="tp-rewind" title="Rewind (tahan)">⏪</button>
         <button data-act="analog" class="tp-analog" title="Mode analog DualShock (seperti tombol ANALOG)">A</button>
       </div>
       <div class="tp-gknob hidden"><i></i></div>`;
