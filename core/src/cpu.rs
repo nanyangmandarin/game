@@ -35,6 +35,20 @@ pub struct Cpu {
     cop0_misc: [u32; 16],
     pub gte: Gte,
     pub stat_exceptions: u32,
+    // ---- idle-loop detection (not part of save states) ----
+    /// Set when the CPU is spinning in a short loop that cannot change anything by itself.
+    #[serde(skip)]
+    pub idle: bool,
+    #[serde(skip)]
+    loop_target: u32,
+    #[serde(skip)]
+    loop_regs: [u32; 32],
+    #[serde(skip)]
+    loop_hilo: (u32, u32),
+    #[serde(skip)]
+    loop_side_effect: bool,
+    #[serde(skip)]
+    loop_hits: u32,
 }
 
 impl Cpu {
@@ -58,6 +72,12 @@ impl Cpu {
             cop0_misc: [0; 16],
             gte: Gte::new(),
             stat_exceptions: 0,
+            idle: false,
+            loop_target: 0,
+            loop_regs: [0; 32],
+            loop_hilo: (0, 0),
+            loop_side_effect: false,
+            loop_hits: 0,
         }
     }
 
@@ -98,6 +118,7 @@ impl Cpu {
     }
 
     fn exception(&mut self, code: u32) {
+        self.loop_target = 0;
         self.stat_exceptions += 1;
         let handler = if self.sr & (1 << 22) != 0 { 0xBFC0_0180 } else { 0x8000_0080 };
         let mode = self.sr & 0x3F;
@@ -165,6 +186,11 @@ impl Cpu {
         self.written = 0;
         self.pending = pending;
 
+        // Stores and coprocessor ops can change state the loop might be waiting on.
+        if matches!(instr >> 26, 0x10 | 0x12 | 0x28..=0x2E | 0x3A) {
+            self.loop_side_effect = true;
+        }
+
         self.execute(instr, bus);
 
         // Apply the previous instruction's delayed load unless this one overwrote it.
@@ -172,6 +198,31 @@ impl Cpu {
         if r != 0 && self.written as usize != r {
             self.regs[r] = v;
         }
+
+        // A taken branch jumping back at most 16 instructions closes a short loop.
+        if self.branch && self.next_pc <= pc && pc - self.next_pc <= 64 {
+            self.check_idle_loop(self.next_pc);
+        }
+    }
+
+    /// Idle-loop detection: the same short loop entered again with identical registers
+    /// and no stores/coprocessor writes in between can only end through an interrupt,
+    /// DMA or device state change, so emulated time can be fast-forwarded.
+    #[cold]
+    fn check_idle_loop(&mut self, target: u32) {
+        let hilo = (self.hi, self.lo);
+        if target == self.loop_target && !self.loop_side_effect && self.regs == self.loop_regs && hilo == self.loop_hilo {
+            self.loop_hits += 1;
+            if self.loop_hits >= 2 {
+                self.idle = true;
+            }
+        } else {
+            self.loop_target = target;
+            self.loop_regs = self.regs;
+            self.loop_hilo = hilo;
+            self.loop_hits = 0;
+        }
+        self.loop_side_effect = false;
     }
 
     #[inline(always)]

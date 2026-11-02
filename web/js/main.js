@@ -60,6 +60,8 @@ let gameId = 'shared';
 let gameTitle = '';
 let biosName = null;
 let lastStats = null;
+let slowSeconds = 0;
+let slowHinted = false;
 const pendingCardReq = new Map();
 
 function post(msg, transfer) { worker.postMessage(msg, transfer || []); }
@@ -79,6 +81,12 @@ worker.onmessage = async (e) => {
       break;
     case 'stats': {
       lastStats = m;
+      // Suggest frameskip once if the device stays below full speed.
+      slowSeconds = running && !paused && m.speed < 92 && settings.speed === 1 ? slowSeconds + 1 : 0;
+      if (slowSeconds === 6 && !slowHinted && !settings.frameskip) {
+        slowHinted = true;
+        toast('Perangkat ini belum mencapai kecepatan penuh. Coba Pengaturan → Grafik → Frameskip 1 agar game tetap lancar.', false, 9000);
+      }
       if (settings.showFps) {
         const s = m;
         const draw = s.drawMs ?? presenter.drawMs;

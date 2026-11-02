@@ -114,6 +114,11 @@ pub struct Gpu {
     pub opt_dither: bool,
     pub stat_pixels: u64,
     pub stat_cmds: u32,
+    // Per-primitive texture lookup caches (rebuilt before each textured primitive).
+    #[serde(skip)]
+    clut_cache: Vec<u16>,
+    #[serde(skip)]
+    tw: [u32; 4], // u_and, u_or, v_and, v_or
 }
 
 impl Gpu {
@@ -170,6 +175,8 @@ impl Gpu {
             opt_dither: true,
             stat_pixels: 0,
             stat_cmds: 0,
+            clut_cache: vec![0; 256],
+            tw: [0xFF, 0, 0xFF, 0],
         };
         g.reset_state();
         g
@@ -678,6 +685,9 @@ impl Gpu {
             p.dither = false;
         }
 
+        if tex {
+            self.prepare_tex(&p);
+        }
         self.triangle(v[0], v[1], v[2], &p);
         if quad {
             self.triangle(v[1], v[2], v[3], &p);
@@ -685,24 +695,44 @@ impl Gpu {
     }
 
     #[inline(always)]
+    /// Cache the CLUT and texture-window masks for a textured primitive.
+    fn prepare_tex(&mut self, p: &Prim) {
+        self.tw = [
+            !(self.win_mx * 8) & 0xFF,
+            (self.win_ox & self.win_mx) * 8,
+            !(self.win_my * 8) & 0xFF,
+            (self.win_oy & self.win_my) * 8,
+        ];
+        let n = match p.depth {
+            0 => 16,
+            1 => 256,
+            _ => 0,
+        };
+        if self.clut_cache.len() < 256 {
+            self.clut_cache.resize(256, 0);
+        }
+        let row = (p.clut_y as usize & (VRAM_H - 1)) * VRAM_W;
+        for i in 0..n {
+            self.clut_cache[i] = self.vram[row + ((p.clut_x as usize + i) & (VRAM_W - 1))];
+        }
+    }
+
+    #[inline(always)]
     fn tex_fetch(&self, p: &Prim, u: i32, v: i32) -> u16 {
-        let u = ((u as u32 & 0xFF) & !(self.win_mx * 8)) | ((self.win_ox & self.win_mx) * 8);
-        let v = ((v as u32 & 0xFF) & !(self.win_my * 8)) | ((self.win_oy & self.win_my) * 8);
+        let u = (u as u32 & self.tw[0]) | self.tw[1];
+        let v = (v as u32 & self.tw[2]) | self.tw[3];
+        let row = (((p.tp_y * 256 + v) as usize) & (VRAM_H - 1)) * VRAM_W;
         let bx = p.tp_x * 64;
-        let by = p.tp_y * 256;
-        let y = ((by + v) as usize) & (VRAM_H - 1);
         match p.depth {
             0 => {
-                let w = self.vram[y * VRAM_W + (((bx + u / 4) as usize) & (VRAM_W - 1))];
-                let idx = (w >> ((u & 3) * 4)) & 0xF;
-                self.vram[(p.clut_y as usize) * VRAM_W + (((p.clut_x + idx as u32) as usize) & (VRAM_W - 1))]
+                let w = self.vram[row + (((bx + (u >> 2)) as usize) & (VRAM_W - 1))];
+                self.clut_cache[((w >> ((u & 3) * 4)) & 0xF) as usize]
             }
             1 => {
-                let w = self.vram[y * VRAM_W + (((bx + u / 2) as usize) & (VRAM_W - 1))];
-                let idx = (w >> ((u & 1) * 8)) & 0xFF;
-                self.vram[(p.clut_y as usize) * VRAM_W + (((p.clut_x + idx as u32) as usize) & (VRAM_W - 1))]
+                let w = self.vram[row + (((bx + (u >> 1)) as usize) & (VRAM_W - 1))];
+                self.clut_cache[((w >> ((u & 1) * 8)) & 0xFF) as usize]
             }
-            _ => self.vram[y * VRAM_W + (((bx + u) as usize) & (VRAM_W - 1))],
+            _ => self.vram[row + (((bx + u) as usize) & (VRAM_W - 1))],
         }
     }
 
@@ -939,6 +969,9 @@ impl Gpu {
         let ys = y0.max(self.da_y1);
         let ye = (y0 + h - 1).min(self.da_y2).min(511);
         self.stat_pixels += (w * h).max(0) as u64;
+        if tex {
+            self.prepare_tex(&p);
+        }
         // Fast path: opaque sprite with unmodulated texture (the common 2D case).
         if tex && !semi && !self.check_mask && (raw || (r == 128 && g == 128 && b == 128)) {
             let mbit = if self.set_mask { 0x8000 } else { 0 };

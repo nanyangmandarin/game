@@ -9,6 +9,9 @@ use crate::cpu::Cpu;
 const CYCLES_PER_INSTR: u32 = 2;
 /// Instructions executed between device updates (64 cycles: low overhead, tiny IRQ latency).
 const BATCH: u32 = 32;
+/// Max cycles fast-forwarded per detected idle loop, and the device step size while doing so.
+const IDLE_SKIP: u32 = 4096;
+const IDLE_STEP: u32 = 64;
 
 #[derive(Serialize, Deserialize)]
 pub struct Psx {
@@ -17,6 +20,8 @@ pub struct Psx {
     pub bios_loaded: bool,
     pending_exe: Option<Vec<u8>>,
     pub fast_boot: bool,
+    #[serde(skip)]
+    pub idle_cycles: u64,
 }
 
 const STATE_MAGIC: &[u8; 8] = b"PS1WSTAT";
@@ -63,7 +68,7 @@ impl Psx {
     }
 
     pub fn new() -> Self {
-        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false }
+        Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false, idle_cycles: 0 }
     }
 
     pub fn load_bios(&mut self, data: &[u8]) -> Result<(), String> {
@@ -129,6 +134,17 @@ impl Psx {
             }
             self.bus.tick(BATCH * CYCLES_PER_INSTR);
             budget -= (BATCH * CYCLES_PER_INSTR) as i64;
+            if self.cpu.idle {
+                // CPU is waiting: advance devices without interpreting the spin loop.
+                self.cpu.idle = false;
+                let mut skipped = 0;
+                while skipped < IDLE_SKIP && !self.bus.irq_pending() && !self.bus.frame_done {
+                    self.bus.tick(IDLE_STEP);
+                    skipped += IDLE_STEP;
+                }
+                budget -= skipped as i64;
+                self.idle_cycles += skipped as u64;
+            }
             if self.cpu.pc == 0x8003_0000 && self.pending_exe.is_some() {
                 self.inject_exe();
             }
