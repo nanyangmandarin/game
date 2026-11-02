@@ -134,7 +134,11 @@ function runOne(present) {
       if (gap > perf.maxGap) perf.maxGap = gap;
     }
     perf.lastShow = t1;
-    if (emu.render(fullVram)) {
+    const info = painter && painter.gl && !fullVram ? emu.display_info() : null;
+    if (info && !info[4]) {
+      // GPU presentation straight from 16-bit VRAM: no CPU colour conversion or copy.
+      painter.frameRaw(info, new Uint8Array(wasm.memory.buffer, emu.vram_ptr(), 1024 * 512 * 2));
+    } else if (emu.render(fullVram)) {
       const w = emu.frame_width(), h = emu.frame_height();
       const view = new Uint8ClampedArray(wasm.memory.buffer, emu.frame_ptr(), emu.frame_len());
       if (painter) {
@@ -282,7 +286,12 @@ onmessage = async (e) => {
         if (painter) painter.setOptions(m.opts);
         break;
       case 'snapshot': {
-        const snap = painter ? painter.snapshot() : null;
+        let snap = painter ? painter.snapshot() : null;
+        if (!snap && emu && emu.render(false)) {
+          // raw GPU path keeps no RGBA copy: produce one on demand
+          const v = new Uint8ClampedArray(wasm.memory.buffer, emu.frame_ptr(), emu.frame_len());
+          snap = { w: emu.frame_width(), h: emu.frame_height(), data: v.slice() };
+        }
         postMessage({ type: 'snapshot', snap }, snap ? [snap.data.buffer] : []);
         break;
       }

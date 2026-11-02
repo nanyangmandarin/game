@@ -258,6 +258,13 @@ impl Emulator {
         r
     }
 
+    /// Display description for GPU-side presentation: [x, y, width, height, depth24, enabled].
+    pub fn display_info(&self) -> Vec<u32> {
+        let g = &self.psx.bus.gpu;
+        let (w, h) = g.display_size();
+        vec![g.disp_x, g.disp_y, w, h, g.depth24 as u32, g.disp_on as u32]
+    }
+
     /// Raw VRAM (1024x512, 16-bit) for GPU-side presentation / debugging.
     pub fn vram_ptr(&self) -> *const u16 {
         self.psx.bus.gpu.vram.as_ptr()

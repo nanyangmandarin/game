@@ -8,13 +8,42 @@ varying vec2 uv;
 void main(){ uv = vec2(p.x*0.5+0.5, 0.5-p.y*0.5); gl_Position = vec4(p,0.,1.); }`;
 
 const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
 varying vec2 uv;
 uniform sampler2D tex;
-uniform vec2 texSize;
+uniform vec2 texSize;  // displayed picture size in pixels
 uniform vec2 outSize;
-uniform int mode;      // 0 nearest/bilinear (sampler), 1 sharp bilinear, 2 CRT
+uniform int mode;      // 0 nearest/bilinear, 1 sharp bilinear, 2 CRT
 uniform float scan;
+uniform int raw;       // 1: tex is the whole 1024x512 VRAM (16-bit as luminance+alpha bytes)
+uniform int smooth;    // raw path: 1 = bilinear
+uniform vec4 disp;     // raw path: display x, y, w, h in VRAM pixels
+
+vec3 rawFetch(vec2 p) {
+  p = clamp(p, vec2(0.0), texSize - 1.0);
+  vec2 q = vec2(mod(disp.x + p.x, 1024.0), mod(disp.y + p.y, 512.0));
+  vec4 t = texture2D(tex, (q + 0.5) / vec2(1024.0, 512.0));
+  float v = floor(t.r * 255.0 + 0.5) + floor(t.a * 255.0 + 0.5) * 256.0;
+  float r = mod(v, 32.0);
+  float g = mod(floor(v / 32.0), 32.0);
+  float b = mod(floor(v / 1024.0), 32.0);
+  return vec3(r, g, b) / 31.0;
+}
+
+vec3 sampleRaw(vec2 c) {
+  if (smooth == 0) return rawFetch(floor(c * texSize));
+  vec2 px = c * texSize - 0.5;
+  vec2 i = floor(px);
+  vec2 f = px - i;
+  vec3 a = mix(rawFetch(i), rawFetch(i + vec2(1.0, 0.0)), f.x);
+  vec3 b = mix(rawFetch(i + vec2(0.0, 1.0)), rawFetch(i + vec2(1.0, 1.0)), f.x);
+  return mix(a, b, f.y);
+}
+
 void main(){
   vec2 c = uv;
   if (mode == 1 || mode == 2) {
@@ -25,7 +54,7 @@ void main(){
     vec2 off = (clamp(f - region, vec2(0.0), vec2(1.0) - 2.0*region) / (1.0 - 2.0*region)) - 0.5;
     c = (floor(px) + 0.5 + off) / texSize;
   }
-  vec3 col = texture2D(tex, c).rgb;
+  vec3 col = raw == 1 ? sampleRaw(c) : texture2D(tex, c).rgb;
   if (mode == 2) {
     float y = uv.y * texSize.y;
     float l = 0.5 + 0.5 * cos(6.2831853 * y);
@@ -97,7 +126,15 @@ export class Painter {
         outSize: gl.getUniformLocation(prog, 'outSize'),
         mode: gl.getUniformLocation(prog, 'mode'),
         scan: gl.getUniformLocation(prog, 'scan'),
+        raw: gl.getUniformLocation(prog, 'raw'),
+        smooth: gl.getUniformLocation(prog, 'smooth'),
+        disp: gl.getUniformLocation(prog, 'disp'),
       };
+      this.rawTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.rawTex);
+      for (const [k, v] of [[gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, 1024, 512, 0, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, null);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       this.gl = gl;
       return 'ok';
     } catch (e) {
@@ -144,6 +181,18 @@ export class Painter {
     return [Math.floor((W - w) / 2), Math.floor((H - h) / 2), w, h];
   }
 
+  /** GPU mode only: draw straight from raw 16-bit VRAM (colour conversion happens in the shader). */
+  frameRaw(info, vramBytes) {
+    const t = performance.now();
+    const [x, y, w, h, , on] = info;
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.rawTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, 512, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, vramBytes);
+    this.last = { w, h, raw: { x, y, on: !!on }, data: null };
+    this.draw();
+    this.drawMs = this.drawMs * 0.9 + (performance.now() - t) * 0.1;
+  }
+
   /** Show a frame. `data` may be a view into WASM memory; it is copied. */
   frame(w, h, data) {
     const n = w * h * 4;
@@ -186,11 +235,20 @@ export class Painter {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (!f) return;
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, f.w, f.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(f.data.buffer, f.data.byteOffset, f.data.length));
-    const filt = this.opts.filter === 'nearest' ? gl.NEAREST : gl.LINEAR;
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+    if (f.raw) {
+      if (!f.raw.on) return; // display disabled: black
+      gl.bindTexture(gl.TEXTURE_2D, this.rawTex);
+      gl.uniform1i(this.u.raw, 1);
+      gl.uniform1i(this.u.smooth, this.opts.filter === 'nearest' ? 0 : 1);
+      gl.uniform4f(this.u.disp, f.raw.x, f.raw.y, f.w, f.h);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
+      gl.uniform1i(this.u.raw, 0);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, f.w, f.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(f.data.buffer, f.data.byteOffset, f.data.length));
+      const filt = this.opts.filter === 'nearest' ? gl.NEAREST : gl.LINEAR;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+    }
     const [x, y, w, h] = this.viewport(f.w, f.h);
     gl.viewport(x, this.canvas.height - y - h, w, h);
     gl.uniform2f(this.u.texSize, f.w, f.h);
@@ -204,6 +262,6 @@ export class Painter {
   /** Copy of the last frame (for screenshots / thumbnails). */
   snapshot() {
     const f = this.last;
-    return f ? { w: f.w, h: f.h, data: f.data.slice() } : null;
+    return f && f.data ? { w: f.w, h: f.h, data: f.data.slice() } : null;
   }
 }

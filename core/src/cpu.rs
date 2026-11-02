@@ -186,11 +186,6 @@ impl Cpu {
         self.written = 0;
         self.pending = pending;
 
-        // Stores and coprocessor ops can change state the loop might be waiting on.
-        if matches!(instr >> 26, 0x10 | 0x12 | 0x28..=0x2E | 0x3A) {
-            self.loop_side_effect = true;
-        }
-
         self.execute(instr, bus);
 
         // Apply the previous instruction's delayed load unless this one overwrote it.
@@ -402,9 +397,15 @@ impl Cpu {
             0x0D => self.set_reg(rt, self.reg(rs) | imm),
             0x0E => self.set_reg(rt, self.reg(rs) ^ imm),
             0x0F => self.set_reg(rt, imm << 16),
-            0x10 => self.cop0(i, rs, rt, rd),
+            0x10 => {
+                self.loop_side_effect = true;
+                self.cop0(i, rs, rt, rd)
+            }
             0x11 | 0x13 => self.exception(EXC_CPU),
-            0x12 => self.cop2(i, rs, rt, rd),
+            0x12 => {
+                self.loop_side_effect = true;
+                self.cop2(i, rs, rt, rd)
+            }
             0x20 => {
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if !self.cache_isolated() {
@@ -465,18 +466,24 @@ impl Cpu {
                 self.load = (rt as usize, v);
             }
             0x28 => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if !self.cache_isolated() {
                     bus.write8(a, self.reg(rt));
                 }
             }
             0x29 => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if self.store_addr_ok(a, 2) && !self.cache_isolated() {
                     bus.write16(a, self.reg(rt));
                 }
             }
             0x2A => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if !self.cache_isolated() {
                     let v = self.reg(rt);
@@ -492,12 +499,16 @@ impl Cpu {
                 }
             }
             0x2B => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if self.store_addr_ok(a, 4) && !self.cache_isolated() {
                     bus.write32(a, self.reg(rt));
                 }
             }
             0x2E => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if !self.cache_isolated() {
                     let v = self.reg(rt);
@@ -520,6 +531,8 @@ impl Cpu {
                 }
             }
             0x3A => {
+                // stores can change state an idle loop might be waiting on
+                self.loop_side_effect = true;
                 let a = self.reg(rs).wrapping_add(imm_se);
                 if self.store_addr_ok(a, 4) && !self.cache_isolated() {
                     let v = self.gte.read_data(rt);

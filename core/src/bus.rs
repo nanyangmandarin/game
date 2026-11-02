@@ -152,10 +152,16 @@ impl Bus {
         let a = Self::phys(addr);
         if a < 0x0080_0000 {
             let o = (a as usize) & (RAM_SIZE - 4);
-            u32::from_le_bytes(self.ram[o..o + 4].try_into().unwrap())
+            // SAFETY: o is 4-aligned and o + 4 <= RAM_SIZE == ram.len()
+            unsafe { u32::from_le((self.ram.as_ptr().add(o) as *const u32).read_unaligned()) }
         } else if (0x1FC0_0000..0x1FC8_0000).contains(&a) {
             let o = (a - 0x1FC0_0000) as usize;
-            u32::from_le_bytes(self.bios[o & !3..(o & !3) + 4].try_into().unwrap())
+            let o = o & (BIOS_SIZE - 4);
+            if self.bios.len() != BIOS_SIZE {
+                return 0;
+            }
+            // SAFETY: o is 4-aligned and o + 4 <= BIOS_SIZE == bios.len()
+            unsafe { u32::from_le((self.bios.as_ptr().add(o) as *const u32).read_unaligned()) }
         } else {
             self.read32(addr)
         }
