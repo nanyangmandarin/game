@@ -1,5 +1,7 @@
 //! MIPS R3000A interpreter (PS1 CPU) with COP0 and COP2 (GTE) dispatch.
 
+use serde::{Deserialize, Serialize};
+
 use crate::bus::Bus;
 use crate::gte::Gte;
 
@@ -12,6 +14,7 @@ const EXC_RI: u32 = 0xA;
 const EXC_CPU: u32 = 0xB;
 const EXC_OVF: u32 = 0xC;
 
+#[derive(Serialize, Deserialize)]
 pub struct Cpu {
     pub regs: [u32; 32],
     /// Register written by the current instruction (cancels a pending delayed load to it).

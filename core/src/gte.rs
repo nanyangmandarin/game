@@ -1,5 +1,7 @@
 //! Geometry Transformation Engine (COP2).
 
+use serde::{Deserialize, Serialize};
+
 fn unr_table() -> [u8; 257] {
     let mut t = [0u8; 257];
     for (i, e) in t.iter_mut().enumerate() {
@@ -9,6 +11,7 @@ fn unr_table() -> [u8; 257] {
     t
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Gte {
     // data registers
     v: [[i16; 3]; 3],
@@ -37,6 +40,7 @@ pub struct Gte {
     zsf3: i16,
     zsf4: i16,
     flag: u32,
+    #[serde(skip, default = "unr_table")]
     unr: [u8; 257],
     // per-command state
     sf: u32,

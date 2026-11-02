@@ -108,6 +108,14 @@ impl Emulator {
         self.psx.load_exe(data).map_err(|e| JsValue::from_str(&e))
     }
 
+    pub fn save_state(&self) -> Vec<u8> {
+        self.psx.save_state()
+    }
+
+    pub fn load_state(&mut self, data: &[u8]) -> Result<(), JsValue> {
+        self.psx.load_state(data).map_err(|e| JsValue::from_str(&e))
+    }
+
     pub fn reset(&mut self) {
         self.psx.reset();
     }

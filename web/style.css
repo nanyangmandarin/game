@@ -151,3 +151,116 @@ table.binds button.listening { border-color: var(--accent); color: var(--accent)
   #btnSettings::before { content: '⚙'; font-size: 14px; }
   .row { flex-wrap: wrap; }
 }
+
+/* ---------- library / welcome ---------- */
+#welcome { max-height: calc(100% - 24px); overflow-y: auto; max-width: 640px; }
+.wel-head { display: flex; align-items: center; gap: 10px; }
+.wel-head h1 { flex: 1; }
+.wel-actions { margin: 12px 0 4px; }
+#welcome h2 { font-size: 15px; margin: 16px 0 6px; color: var(--muted); font-weight: 600; }
+.resume {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel-2); border: 1px solid var(--accent);
+  border-radius: 12px; padding: 10px; margin: 12px 0;
+}
+.resume img { width: 96px; height: 72px; object-fit: cover; border-radius: 6px; background: #000; }
+.resume > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.resume small { color: var(--muted); }
+ul.games { list-style: none; padding: 0; margin: 0; }
+ul.games li {
+  display: flex; align-items: center; gap: 8px; padding: 8px 0;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+ul.games img { width: 64px; height: 48px; object-fit: cover; border-radius: 5px; background: #000; flex: none; }
+ul.games img.empty { visibility: hidden; }
+ul.games li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+ul.games b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.games small { color: var(--muted); font-size: 12px; }
+#progress {
+  position: absolute; top: 10px; right: 10px; z-index: 5;
+  background: rgba(23,26,33,.95); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 12px; width: min(320px, calc(100% - 20px)); font-size: 13px;
+}
+#progress div { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+#progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+h3.sub { font-size: 14px; margin: 18px 0 4px; color: var(--muted); }
+
+/* ---------- save states ---------- */
+.state-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.state { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.state .thumb { aspect-ratio: 4 / 3; background: #000; border-radius: 6px; overflow: hidden; }
+.state .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.state small { color: var(--muted); font-size: 12px; }
+.state .btns { display: flex; gap: 6px; margin-top: 4px; }
+.state .btns button { flex: 1; padding: 5px 6px; }
+
+/* ---------- on-screen touch controller ---------- */
+#touch {
+  position: absolute; inset: 0; z-index: 3;
+  pointer-events: none; user-select: none; -webkit-user-select: none;
+  touch-action: none; --tp-opacity: .6;
+}
+#touch .tp { position: absolute; pointer-events: auto; opacity: var(--tp-opacity); touch-action: none; }
+#touch button {
+  -webkit-tap-highlight-color: transparent;
+  background: rgba(40, 44, 54, .85); border: 2px solid rgba(255,255,255,.35);
+  color: #fff; font-weight: 700; padding: 0;
+}
+#touch button.on, #touch .tp-dpad span.on { background: rgba(79, 140, 255, .9); border-color: #fff; }
+#touch .tp-face { width: var(--face); height: var(--face); }
+#touch .tp-face button { position: absolute; width: 36%; height: 36%; border-radius: 50%; font-size: calc(var(--face) * .16); }
+#touch .tri { left: 32%; top: 0; color: #5fe0b4; }
+#touch .sq { left: 0; top: 32%; color: #f39bd0; }
+#touch .ci { right: 0; top: 32%; color: #ff6b6b; }
+#touch .cr { left: 32%; bottom: 0; color: #8fb7ff; }
+#touch .tp-dpad { width: var(--dpad); height: var(--dpad); }
+#touch .tp-dpad span {
+  position: absolute; background: rgba(40,44,54,.85); border: 2px solid rgba(255,255,255,.35);
+  width: 34%; height: 34%;
+}
+#touch .tp-dpad .u { left: 33%; top: 0; border-radius: 8px 8px 2px 2px; }
+#touch .tp-dpad .d { left: 33%; bottom: 0; border-radius: 2px 2px 8px 8px; }
+#touch .tp-dpad .l { top: 33%; left: 0; border-radius: 8px 2px 2px 8px; }
+#touch .tp-dpad .r { top: 33%; right: 0; border-radius: 2px 8px 8px 2px; }
+#touch .tp-dpad i { position: absolute; left: 33%; top: 33%; width: 34%; height: 34%; background: rgba(40,44,54,.85); }
+#touch .tp-stick {
+  width: var(--stick); height: var(--stick); border-radius: 50%;
+  background: rgba(40,44,54,.6); border: 2px solid rgba(255,255,255,.3); display: none;
+}
+#touch.with-stick .tp-stick { display: block; }
+#touch .knob {
+  position: absolute; left: 30%; top: 30%; width: 40%; height: 40%; border-radius: 50%;
+  background: rgba(200,205,215,.85); pointer-events: none;
+}
+#touch .tp-shoulder { display: flex; gap: 8px; }
+#touch .tp-shoulder button { width: 58px; height: 36px; border-radius: 10px; font-size: 13px; }
+#touch .tp-mid { display: flex; gap: 14px; }
+#touch .tp-mid button { width: 64px; height: 26px; border-radius: 13px; font-size: 10px; letter-spacing: .5px; }
+#touch .tp-sys { display: flex; gap: 6px; }
+#touch .tp-sys button { width: 36px; height: 30px; border-radius: 8px; font-size: 14px; }
+
+/* landscape: controls overlay the sides of the picture */
+body.touch-on #touch { --dpad: min(36vh, 170px); --face: min(38vh, 180px); --stick: min(28vh, 130px); }
+body.touch-on #touch .tp-left { left: max(12px, env(safe-area-inset-left)); top: 10px; }
+body.touch-on #touch .tp-right { right: max(12px, env(safe-area-inset-right)); top: 10px; }
+body.touch-on #touch .tp-dpad { left: max(16px, env(safe-area-inset-left)); bottom: 20vh; }
+body.touch-on #touch .tp-stick { left: calc(max(16px, env(safe-area-inset-left)) + var(--dpad) + 8px); bottom: 4vh; }
+body.touch-on #touch .tp-face { right: max(16px, env(safe-area-inset-right)); bottom: 18vh; }
+body.touch-on #touch .tp-mid { left: 50%; transform: translateX(-50%); bottom: 10px; }
+body.touch-on #touch .tp-sys { left: 50%; transform: translateX(-50%); top: 8px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  body.touch-on .bar { display: none; }
+}
+
+/* portrait: picture on top, controls below */
+@media (orientation: portrait) {
+  body.touch-on #screenHost { bottom: 50%; }
+  body.touch-on #touch { --dpad: min(38vw, 180px); --face: min(40vw, 190px); --stick: min(26vw, 120px); }
+  body.touch-on #touch .tp-left { left: 12px; top: calc(50% + 10px); }
+  body.touch-on #touch .tp-right { right: 12px; top: calc(50% + 10px); }
+  body.touch-on #touch .tp-dpad { left: 14px; bottom: max(64px, calc(env(safe-area-inset-bottom) + 56px)); }
+  body.touch-on #touch .tp-face { right: 14px; bottom: max(60px, calc(env(safe-area-inset-bottom) + 52px)); }
+  body.touch-on #touch .tp-stick { left: 50%; transform: translateX(-50%); bottom: calc(max(14px, env(safe-area-inset-bottom)) + 36px); }
+  body.touch-on #touch .tp-mid { bottom: max(14px, env(safe-area-inset-bottom)); }
+  body.touch-on #touch .tp-sys { top: calc(50% + 54px); flex-direction: column; }
+}

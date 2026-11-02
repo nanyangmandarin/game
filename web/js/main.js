@@ -3,6 +3,10 @@ import { prepareGame } from './disc.js';
 import { kv } from './storage.js';
 import { listSaves, freeBlocks, deleteSave, importCard } from './memcard.js';
 import {
+  opfsSupported, dirName, listGames, getGame, putGame, touchGame, gameFiles, removeGame, importGame, storageInfo, fmtSize,
+} from './library.js';
+import { TouchPad, isTouchDevice } from './touch.js';
+import {
   Input, BUTTONS, BUTTON_LABELS, AXES, AXIS_LABELS, DEFAULT_KEYS, DEFAULT_PAD,
   DEFAULT_HOTKEYS, HOTKEY_LABELS, keyLabel,
 } from './input.js';
@@ -18,6 +22,8 @@ const DEFAULTS = {
   keys: structuredClone(DEFAULT_KEYS), padMap: [{ ...DEFAULT_PAD }, { ...DEFAULT_PAD }],
   hotkeys: { ...DEFAULT_HOTKEYS },
   cardMode: ['shared', 'shared'],
+  saveGames: true, autosave: true,
+  touchMode: 'auto', touchOpacity: 60, touchStick: false, touchHaptics: true,
 };
 
 function loadSettings() {
@@ -65,6 +71,7 @@ worker.onmessage = async (e) => {
       ready = true;
       await restoreBios();
       for (let s = 0; s < 2; s++) await loadCardIntoCore(s, 'shared');
+      renderLibrary();
       break;
     case 'frame':
       presenter.frame(m.w, m.h, m.data);
@@ -79,8 +86,15 @@ worker.onmessage = async (e) => {
       lastStats = m;
       break;
     case 'booted':
-      toast(`Berjalan: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
+      toast(`${m.resumed ? 'Melanjutkan' : 'Berjalan'}: ${gameTitle}${m.region !== '-' ? ' · ' + m.region : ''}`);
       break;
+    case 'stateData':
+    case 'stateLoaded': {
+      const cb = pending.get(m.id);
+      pending.delete(m.id);
+      cb && cb(m);
+      break;
+    }
     case 'memcard':
       await kv.set(cardKey(m.slot, m.gameId), new Uint8Array(m.data));
       break;
@@ -276,37 +290,232 @@ async function renderCards() {
   }
 }
 
-// ---------------- game loading ----------------
-async function openGame(files) {
+// ---------------- game library & loading ----------------
+let currentMeta = null; // {id, title, files, tracks, exe}
+
+async function readCards(id) {
+  const cards = [];
+  for (let s = 0; s < 2; s++) {
+    const d = settings.cardMode[s] === 'none' ? null : await kv.get(cardKey(s, id));
+    cards.push(d ? d.buffer.slice(0) : null);
+  }
+  return cards;
+}
+
+/** Start a game. `files` are File objects (picked or from OPFS). */
+async function bootGame(meta, files, { resume = false } = {}) {
+  if (!ready) { toast('Emulator masih memuat…'); return; }
+  if (!biosName && !meta.exe) {
+    toast('Pilih BIOS dulu sebelum menjalankan game.', true, 6000);
+    return;
+  }
+  await ensureAudio();
+  if (running && gameId !== meta.id) await saveState('auto', { silent: true });
+  gameId = meta.id;
+  gameTitle = meta.title;
+  currentMeta = meta;
+  document.title = `${meta.title} — PS1 Web Emulator`;
+  const cards = await readCards(gameId);
+  const exe = meta.exe ? await files[0].arrayBuffer() : null;
+  let state = null;
+  if (resume) {
+    const rec = await kv.get(`state:${gameId}:auto`);
+    if (rec) state = { data: rec.data.buffer.slice(0), gz: rec.gz };
+  }
+  post({ type: 'boot', files: meta.exe ? [] : files, tracks: meta.tracks, exe, gameId, cards, state });
+  running = true;
+  userPaused = false;
+  setPaused(false);
+  showLibrary(false);
+  for (const id of ['#btnPause', '#btnReset', '#btnFF', '#btnShot', '#btnStates']) $(id).disabled = false;
+  await touchGame(gameId);
+  updateTouch();
+}
+
+async function openGame(picked) {
   if (!ready) { toast('Emulator masih memuat…'); return; }
   try {
-    const g = await prepareGame(files);
-    if (!biosName && !g.exe) {
-      toast('Pilih BIOS dulu sebelum menjalankan game (Pengaturan → Sistem).', true, 6000);
-      return;
-    }
-    await ensureAudio();
-    gameId = g.id;
-    gameTitle = g.title;
-    document.title = `${g.title} — PS1 Web Emulator`;
-    const cards = [];
-    for (let s = 0; s < 2; s++) {
-      const d = settings.cardMode[s] === 'none' ? null : await kv.get(cardKey(s, gameId));
-      cards.push(d ? d.buffer.slice(0) : null);
-    }
-    const exe = g.exe ? await g.exe.arrayBuffer() : null;
-    post({ type: 'boot', files: g.files, tracks: g.tracks, exe, gameId, cards });
-    running = true;
-    setPaused(false);
-    $('#welcome').classList.add('hidden');
-    for (const id of ['#btnPause', '#btnReset', '#btnFF', '#btnShot']) $(id).disabled = false;
+    const g = await prepareGame(picked);
+    const files = g.exe ? [g.exe] : g.files;
+    const meta = { id: g.id, dir: dirName(g.id), title: g.title, files: files.map((f) => f.name), tracks: g.tracks, exe: !!g.exe };
+    const hasAuto = !!(await kv.get(`state:${g.id}:auto`));
+    const resume = hasAuto && confirm(`Ada progres tersimpan untuk "${g.title}". Lanjutkan dari situ?\n(Batal = mulai dari awal)`);
+    await bootGame(meta, files, { resume });
+    if (settings.saveGames && opfsSupported && !(await getGame(meta.id))) storeGame(meta, files);
+    else if (await getGame(meta.id)) await putGame({ ...(await getGame(meta.id)), tracks: meta.tracks });
   } catch (err) {
     toast(err.message || String(err), true, 6000);
   }
 }
 
+async function storeGame(meta, files) {
+  const bar = $('#progress');
+  bar.classList.remove('hidden');
+  bar.querySelector('span').textContent = `Menyimpan "${meta.title}" ke browser…`;
+  try {
+    await importGame(meta, files, (f) => { bar.querySelector('i').style.width = (f * 100).toFixed(1) + '%'; });
+    toast(`"${meta.title}" tersimpan. Setelah refresh, buka dari "Game Saya".`);
+    renderLibrary();
+  } catch (err) {
+    toast('Game tetap jalan, tapi tidak bisa disimpan: ' + err.message, true, 7000);
+  } finally {
+    bar.classList.add('hidden');
+    bar.querySelector('i').style.width = '0';
+  }
+}
+
+async function playFromLibrary(meta, resume) {
+  try {
+    const files = await gameFiles(meta);
+    await bootGame(meta, files, { resume });
+  } catch (err) {
+    toast('File game tidak ditemukan di penyimpanan browser. Tambahkan ulang game-nya. (' + err.message + ')', true, 7000);
+  }
+}
+
+function fmtTime(t) {
+  return new Date(t).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+async function renderLibrary() {
+  const list = opfsSupported ? await listGames() : [];
+  const ul = $('#gameList');
+  ul.innerHTML = '';
+  $('#libSection').classList.toggle('hidden', !list.length);
+  for (const g of list) {
+    const auto = await kv.get(`state:${g.id}:auto`);
+    const li = document.createElement('li');
+    li.innerHTML = `<img alt=""><div><b></b><small></small></div>
+      <button class="primary" data-a="resume">▶ Lanjutkan</button><button data-a="new">Mulai baru</button><button class="danger" data-a="del" title="Hapus dari browser">🗑</button>`;
+    li.querySelector('b').textContent = g.title;
+    li.querySelector('small').textContent = `${fmtSize(g.size || 0)}${g.lastPlayed ? ' · dimainkan ' + fmtTime(g.lastPlayed) : ''}`;
+    const img = li.querySelector('img');
+    if (auto && auto.thumb) img.src = auto.thumb; else img.classList.add('empty');
+    const btnResume = li.querySelector('[data-a=resume]');
+    if (!auto) btnResume.remove();
+    else btnResume.onclick = () => playFromLibrary(g, true);
+    li.querySelector('[data-a=new]').onclick = () => playFromLibrary(g, false);
+    li.querySelector('[data-a=del]').onclick = async () => {
+      if (!confirm(`Hapus "${g.title}" beserta save state-nya dari browser?\n(Save di memory card tidak ikut terhapus.)`)) return;
+      await removeGame(g.id);
+      renderLibrary();
+    };
+    ul.appendChild(li);
+  }
+  // resume card for the last played game
+  const lastId = await kv.get('lastGame');
+  const last = list.find((g) => g.id === lastId);
+  const auto = last ? await kv.get(`state:${last.id}:auto`) : null;
+  const r = $('#resume');
+  if (last && auto && !running) {
+    r.classList.remove('hidden');
+    r.querySelector('img').src = auto.thumb || '';
+    $('#resumeTitle').textContent = last.title;
+    $('#resumeTime').textContent = 'Progres terakhir: ' + fmtTime(auto.time);
+    $('#btnResume').onclick = () => playFromLibrary(last, true);
+  } else {
+    r.classList.add('hidden');
+  }
+  const info = await storageInfo();
+  $('#storageInfo').textContent = info && list.length
+    ? `Penyimpanan browser terpakai ${fmtSize(info.usage)} dari ${fmtSize(info.quota)}.` : '';
+}
+
+function showLibrary(show) {
+  $('#welcome').classList.toggle('hidden', !show);
+  $('#btnBackToGame').classList.toggle('hidden', !running);
+  if (show) {
+    renderLibrary();
+    if (running && !paused) { setPaused(true); pausedForLibrary = true; }
+  } else if (pausedForLibrary) {
+    pausedForLibrary = false;
+    setPaused(false);
+  }
+  updateTouch();
+}
+let pausedForLibrary = false;
+
 $('#btnOpen').onclick = () => $('#fileGame').click();
+$('#btnLibrary').onclick = () => showLibrary($('#welcome').classList.contains('hidden'));
+$('#btnBackToGame').onclick = () => showLibrary(false);
 $('#fileGame').onchange = (e) => { const f = Array.from(e.target.files); e.target.value = ''; if (f.length) openGame(f); };
+
+// ---------------- save states ----------------
+const pending = new Map();
+function request(msg, transfer) {
+  return new Promise((res) => {
+    const id = Math.random().toString(36).slice(2);
+    pending.set(id, res);
+    post({ ...msg, id }, transfer);
+  });
+}
+
+function makeThumb() {
+  const f = presenter.last;
+  if (!f) return null;
+  const c = document.createElement('canvas');
+  c.width = f.w; c.height = f.h;
+  c.getContext('2d').putImageData(new ImageData(f.data, f.w, f.h), 0, 0);
+  const t = document.createElement('canvas');
+  t.width = 160; t.height = 120;
+  const x = t.getContext('2d');
+  x.imageSmoothingEnabled = true;
+  x.drawImage(c, 0, 0, 160, 120);
+  return t.toDataURL('image/jpeg', 0.75);
+}
+
+const SLOT_NAMES = { auto: 'Otomatis', quick: 'Cepat (F5/F8)', 1: 'Slot 1', 2: 'Slot 2', 3: 'Slot 3', 4: 'Slot 4', 5: 'Slot 5' };
+
+async function saveState(slot, { silent = false } = {}) {
+  if (!running) return;
+  const r = await request({ type: 'saveState' });
+  const rec = { data: new Uint8Array(r.data), gz: r.gz, thumb: makeThumb(), time: Date.now(), title: gameTitle };
+  await kv.set(`state:${gameId}:${slot}`, rec);
+  if (!silent) toast(`State disimpan: ${SLOT_NAMES[slot]}`);
+  if ($('#statesDlg').open) renderStates();
+}
+
+async function loadState(slot) {
+  if (!running) return;
+  const rec = await kv.get(`state:${gameId}:${slot}`);
+  if (!rec) { toast(`${SLOT_NAMES[slot]} masih kosong.`, true); return; }
+  const r = await request({ type: 'loadState', data: rec.data.buffer.slice(0), gz: rec.gz });
+  if (r.ok) toast(`State dimuat: ${SLOT_NAMES[slot]}`); else toast('Gagal memuat state: ' + r.message, true, 6000);
+}
+
+async function renderStates() {
+  const grid = $('#stateGrid');
+  grid.innerHTML = '';
+  for (const slot of ['auto', 'quick', '1', '2', '3', '4', '5']) {
+    const rec = await kv.get(`state:${gameId}:${slot}`);
+    const el = document.createElement('div');
+    el.className = 'state';
+    el.innerHTML = `<div class="thumb"></div><b>${SLOT_NAMES[slot]}</b><small>${rec ? fmtTime(rec.time) : 'kosong'}</small>
+      <div class="btns">${slot === 'auto' ? '' : '<button type="button" data-a="save">Simpan</button>'}
+      <button type="button" class="primary" data-a="load" ${rec ? '' : 'disabled'}>Muat</button></div>`;
+    if (rec && rec.thumb) {
+      const img = new Image();
+      img.src = rec.thumb;
+      el.querySelector('.thumb').appendChild(img);
+    }
+    el.querySelector('[data-a=save]')?.addEventListener('click', () => saveState(slot));
+    el.querySelector('[data-a=load]').addEventListener('click', async () => { await loadState(slot); $('#statesDlg').close(); });
+    grid.appendChild(el);
+  }
+}
+
+$('#btnStates').onclick = () => {
+  if (!running) return;
+  renderStates();
+  if (!paused) { setPaused(true); pausedForStates = true; }
+  $('#statesDlg').showModal();
+};
+let pausedForStates = false;
+$('#statesDlg').addEventListener('close', () => { if (pausedForStates) { pausedForStates = false; setPaused(false); } });
+
+// autosave: periodic + when the page is hidden/closed (refresh, tab switch, app switch on phones)
+setInterval(() => { if (running && !paused && settings.autosave) saveState('auto', { silent: true }); }, 30000);
+window.addEventListener('pagehide', () => { if (running && settings.autosave) saveState('auto', { silent: true }); });
 
 const stage = $('#stage');
 stage.addEventListener('dragover', (e) => { e.preventDefault(); stage.classList.add('dragging'); });
@@ -347,6 +556,7 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 document.addEventListener('visibilitychange', () => {
+  if (running && document.hidden && settings.autosave) saveState('auto', { silent: true });
   if (!running || !settings.pauseOnBlur || userPaused) return;
   setPaused(document.hidden);
 });
@@ -363,6 +573,8 @@ const input = new Input(
       case 'reset': if (running) post({ type: 'reset' }); break;
       case 'fullscreen': toggleFullscreen(); break;
       case 'screenshot': if (running) screenshot(); break;
+      case 'saveState': saveState('quick'); break;
+      case 'loadState': loadState('quick'); break;
       case 'analog': post({ type: 'analogToggle', port: 0 }); break;
       case 'analogPort0': post({ type: 'analogToggle', port: 0 }); break;
       case 'analogPort1': post({ type: 'analogToggle', port: 1 }); break;
@@ -376,6 +588,7 @@ const dlg = $('#settings');
 let pausedForMenu = false;
 
 function openSettings() {
+  if ($('#statesDlg').open) $('#statesDlg').close();
   syncForm();
   renderBinds();
   renderHotkeys();
@@ -437,7 +650,8 @@ function applySettings() {
   $('#overlay').classList.toggle('hidden', !settings.showFps);
   $('#volOut').textContent = settings.volume + '%';
   if (audioCtx && audioCtx._node) audioCtx._node.port.postMessage({ latency: settings.latency });
-  if (used !== settings.renderer) updateRendererHint(); else updateRendererHint();
+  updateRendererHint();
+  updateTouch();
   pushSettings();
 }
 
@@ -550,6 +764,26 @@ function renderHotkeys() {
     tb.appendChild(tr);
   }
 }
+
+// ---------------- on-screen touch controller ----------------
+const touch = new TouchPad($('#stage'), (st) => input.setTouch(st), (action, down) => {
+  switch (action) {
+    case 'ff': if (running) post({ type: 'ff', on: down || ffLatched }); break;
+    case 'menu': if (down) openSettings(); break;
+    case 'save': if (down) saveState('quick'); break;
+    case 'load': if (down) loadState('quick'); break;
+  }
+});
+
+function updateTouch() {
+  const want = settings.touchMode === 'on' || (settings.touchMode === 'auto' && isTouchDevice());
+  const show = want && running && $('#welcome').classList.contains('hidden');
+  touch.setVisible(show);
+  touch.setOptions({ opacity: settings.touchOpacity, haptics: settings.touchHaptics, stick: settings.touchStick });
+  document.body.classList.toggle('touch-on', show);
+  presenter.redraw();
+}
+window.addEventListener('resize', () => updateTouch());
 
 applySettings();
 refreshBiosUi();

@@ -1,5 +1,7 @@
 //! Sound Processing Unit: 24 ADPCM voices, ADSR, noise, pitch modulation, reverb.
 
+use serde::{Deserialize, Serialize};
+
 use crate::cdrom::CdRom;
 
 const SPU_RAM: usize = 512 * 1024;
@@ -8,7 +10,7 @@ const CYCLES_PER_SAMPLE: u32 = 768;
 const POS: [i32; 5] = [0, 60, 115, 98, 122];
 const NEG: [i32; 5] = [0, 0, -52, -55, -60];
 
-#[derive(Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 enum Phase {
     #[default]
     Off,
@@ -18,7 +20,7 @@ enum Phase {
     Release,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Voice {
     vol_l: u16,
     vol_r: u16,
@@ -41,6 +43,7 @@ struct Voice {
     repeat_set: bool,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Spu {
     ram: Vec<u8>,
     v: [Voice; 24],
@@ -71,6 +74,7 @@ pub struct Spu {
     rev_phase: bool,
     rev_in: (i32, i32),
     rev_out: (i32, i32),
+    #[serde(skip)]
     pub out: Vec<i16>,
     pub master_volume: f32,
     pub reverb_enabled: bool,

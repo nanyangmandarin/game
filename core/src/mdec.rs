@@ -1,5 +1,8 @@
 //! MDEC: macroblock decoder used for FMV playback.
 
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
+
 use std::collections::VecDeque;
 
 const ZIGZAG: [usize; 64] = [
@@ -8,7 +11,7 @@ const ZIGZAG: [usize; 64] = [
     49, 57, 58, 62, 63,
 ];
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum State {
     Idle,
     Decode,
@@ -16,6 +19,7 @@ enum State {
     ScaleTable,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Mdec {
     state: State,
     remaining: u32,
@@ -24,14 +28,26 @@ pub struct Mdec {
     bit15: bool,
     color_qt: bool,
     input: Vec<u16>,
+    #[serde(with = "BigArray")]
     qt_y: [u8; 64],
+    #[serde(with = "BigArray")]
     qt_uv: [u8; 64],
+    #[serde(with = "BigArray")]
     scale: [i16; 64],
+    #[serde(skip, default = "zagzig_table")]
     zagzig: [usize; 64],
     out: VecDeque<u32>,
     dma_in: bool,
     dma_out: bool,
     table_words: Vec<u32>,
+}
+
+fn zagzig_table() -> [usize; 64] {
+    let mut z = [0usize; 64];
+    for (i, &v) in ZIGZAG.iter().enumerate() {
+        z[v] = i;
+    }
+    z
 }
 
 impl Mdec {

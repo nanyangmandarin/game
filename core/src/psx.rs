@@ -1,5 +1,7 @@
 //! Top-level machine: CPU + bus, frame stepping and EXE sideloading.
 
+use serde::{Deserialize, Serialize};
+
 use crate::bus::{Bus, BIOS_SIZE};
 use crate::cpu::Cpu;
 
@@ -7,6 +9,7 @@ use crate::cpu::Cpu;
 const CYCLES_PER_INSTR: u32 = 2;
 const BATCH: u32 = 8;
 
+#[derive(Serialize, Deserialize)]
 pub struct Psx {
     pub cpu: Cpu,
     pub bus: Bus,
@@ -15,7 +18,49 @@ pub struct Psx {
     pub fast_boot: bool,
 }
 
+const STATE_MAGIC: &[u8; 8] = b"PS1WSTAT";
+const STATE_VERSION: u32 = 1;
+
 impl Psx {
+    /// Serialize the whole machine (except BIOS, disc image and memory card contents).
+    pub fn save_state(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(4 * 1024 * 1024);
+        out.extend_from_slice(STATE_MAGIC);
+        out.extend_from_slice(&STATE_VERSION.to_le_bytes());
+        bincode::serialize_into(&mut out, self).expect("serialize state");
+        out
+    }
+
+    /// Restore a state produced by `save_state`. Keeps the current BIOS, disc,
+    /// memory cards, controller types and user options.
+    pub fn load_state(&mut self, data: &[u8]) -> Result<(), String> {
+        if data.len() < 12 || &data[0..8] != STATE_MAGIC {
+            return Err("Bukan file save state".into());
+        }
+        let ver = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+        if ver != STATE_VERSION {
+            return Err(format!("Versi save state tidak cocok ({ver})"));
+        }
+        let mut new: Psx = bincode::deserialize(&data[12..]).map_err(|e| format!("State rusak: {e}"))?;
+        let old = &mut self.bus;
+        new.bus.bios = std::mem::take(&mut old.bios);
+        new.bus.cd.disc = old.cd.disc.take();
+        for i in 0..2 {
+            new.bus.pad.cards[i].data = std::mem::take(&mut old.pad.cards[i].data);
+            new.bus.pad.cards[i].present = old.pad.cards[i].present;
+            new.bus.pad.pads[i].kind = old.pad.pads[i].kind;
+            new.bus.pad.pads[i].buttons = old.pad.pads[i].buttons;
+            new.bus.pad.pads[i].axes = old.pad.pads[i].axes;
+        }
+        new.bus.gpu.opt_dither = old.gpu.opt_dither;
+        new.bus.spu.master_volume = old.spu.master_volume;
+        new.bus.spu.reverb_enabled = old.spu.reverb_enabled;
+        new.bus.spu.interp = old.spu.interp;
+        new.bios_loaded = self.bios_loaded;
+        *self = new;
+        Ok(())
+    }
+
     pub fn new() -> Self {
         Psx { cpu: Cpu::new(), bus: Bus::new(), bios_loaded: false, pending_exe: None, fast_boot: false }
     }

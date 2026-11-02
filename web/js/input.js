@@ -31,10 +31,10 @@ export const DEFAULT_PAD = {
 };
 
 export const DEFAULT_HOTKEYS = {
-  pause: 'KeyP', reset: 'F3', fastForward: 'Tab', fullscreen: 'F2', screenshot: 'F9', analog: 'F4', menu: 'Escape',
+  pause: 'KeyP', reset: 'F3', saveState: 'F5', loadState: 'F8', fastForward: 'Tab', fullscreen: 'F2', screenshot: 'F9', analog: 'F4', menu: 'Escape',
 };
 export const HOTKEY_LABELS = {
-  pause: 'Pause / Lanjut', reset: 'Reset', fastForward: 'Fast-forward (tahan)', fullscreen: 'Layar penuh',
+  pause: 'Pause / Lanjut', reset: 'Reset', saveState: 'Quick save state', loadState: 'Quick load state', fastForward: 'Fast-forward (tahan)', fullscreen: 'Layar penuh',
   screenshot: 'Screenshot', analog: 'Toggle Analog (Port 1)', menu: 'Buka/tutup menu',
 };
 
@@ -55,6 +55,7 @@ export class Input {
     this.capture = null;
     this.prev = '';
     this.prevPadButtons = new Map();
+    this.touch = { buttons: 0, lx: 0, ly: 0 };
     window.addEventListener('keydown', (e) => this.key(e, true));
     window.addEventListener('keyup', (e) => this.key(e, false));
     window.addEventListener('blur', () => this.down.clear());
@@ -134,6 +135,11 @@ export class Input {
         if (home && !this.prevPadButtons.get(key)) this.onHotkey('analogPort' + p, true);
         this.prevPadButtons.set(key, !!home);
       }
+      if (p === 0) {
+        buttons |= this.touch.buttons;
+        axes.lx += this.touch.lx;
+        axes.ly += this.touch.ly;
+      }
       const conv = (v) => Math.max(0, Math.min(255, Math.round(128 + Math.max(-1, Math.min(1, v)) * 127.5)));
       return { buttons, lx: conv(axes.lx), ly: conv(axes.ly), rx: conv(axes.rx), ry: conv(axes.ry) };
     });
@@ -142,6 +148,10 @@ export class Input {
       this.prev = sig;
       this.onChange(state);
     }
+  }
+
+  setTouch(t) {
+    this.touch = t;
   }
 
   rumble(port, small, large) {

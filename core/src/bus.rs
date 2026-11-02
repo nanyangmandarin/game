@@ -1,5 +1,7 @@
 //! Memory map, interrupt controller and DMA.
 
+use serde::{Deserialize, Serialize};
+
 use crate::cdrom::CdRom;
 use crate::gpu::{Gpu, EV_HBLANK_END, EV_HBLANK_START, EV_VBLANK_END, EV_VBLANK_START};
 use crate::mdec::Mdec;
@@ -17,15 +19,17 @@ pub const IRQ_SPU: u32 = 9;
 pub const RAM_SIZE: usize = 2 * 1024 * 1024;
 pub const BIOS_SIZE: usize = 512 * 1024;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Serialize, Deserialize)]
 struct DmaChannel {
     madr: u32,
     bcr: u32,
     chcr: u32,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Bus {
     pub ram: Vec<u8>,
+    #[serde(skip)]
     pub bios: Vec<u8>,
     scratch: Vec<u8>,
     pub i_stat: u32,

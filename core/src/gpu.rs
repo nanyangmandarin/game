@@ -1,5 +1,7 @@
 //! GPU: GP0/GP1 command processing, software rasterizer, display timing.
 
+use serde::{Deserialize, Serialize};
+
 pub const EV_HBLANK_START: u8 = 1;
 pub const EV_HBLANK_END: u8 = 2;
 pub const EV_VBLANK_START: u8 = 4;
@@ -10,7 +12,7 @@ const VRAM_H: usize = 512;
 
 const DITHER: [[i32; 4]; 4] = [[-4, 0, -3, 1], [2, -2, 3, -1], [-3, 1, -4, 0], [3, -1, 2, -2]];
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, Serialize, Deserialize)]
 struct Vtx {
     x: i32,
     y: i32,
@@ -21,7 +23,7 @@ struct Vtx {
     v: i32,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Prim {
     textured: bool,
     gouraud: bool,
@@ -36,7 +38,7 @@ struct Prim {
     dither: bool,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Xfer {
     x: u32,
     y: u32,
@@ -46,13 +48,14 @@ struct Xfer {
     cy: u32,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum Mode {
     Command,
     Load,
     PolyLine,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Gpu {
     pub vram: Vec<u16>,
     // draw mode (E1)

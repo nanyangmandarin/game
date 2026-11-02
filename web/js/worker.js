@@ -64,6 +64,28 @@ function readDiscInner(file, offset, len) {
   return pos === len ? out : out.subarray(0, pos);
 }
 
+// ---------------- memory cards / save states ----------------
+function flushCards() {
+  for (let s = 0; s < 2; s++) {
+    if (emu.memcard_take_dirty(s)) {
+      const data = emu.memcard_get(s);
+      postMessage({ type: 'memcard', slot: s, gameId, data }, [data.buffer]);
+    }
+  }
+}
+
+async function gzip(u8) {
+  if (typeof CompressionStream === 'undefined') return { data: u8, gz: false };
+  const s = new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'));
+  return { data: new Uint8Array(await new Response(s).arrayBuffer()), gz: true };
+}
+
+async function gunzip(u8, gz) {
+  if (!gz) return u8;
+  const s = new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+
 // ---------------- frame loop ----------------
 function fps() {
   return emu && emu.is_pal() ? 50 : 59.94;
@@ -96,14 +118,7 @@ function runOne(present) {
   }
 
   // memory cards: flush writes about twice a second
-  if (frameCount % 30 === 0) {
-    for (let s = 0; s < 2; s++) {
-      if (emu.memcard_take_dirty(s)) {
-        const data = emu.memcard_get(s);
-        postMessage({ type: 'memcard', slot: s, gameId, data }, [data.buffer]);
-      }
-    }
-  }
+  if (frameCount % 30 === 0) flushCards();
 
   if (present && frameskip > 0 && frameCount % (frameskip + 1) !== 0) present = false;
   if (present) {
@@ -255,10 +270,39 @@ onmessage = async (e) => {
         }
         if (m.exe) emu.load_exe(new Uint8Array(m.exe));
         if (m.cards) {
-          for (let s = 0; s < 2; s++) if (m.cards[s]) emu.memcard_set(s, new Uint8Array(m.cards[s]));
+          for (let s = 0; s < 2; s++) {
+            if (m.cards[s]) emu.memcard_set(s, new Uint8Array(m.cards[s]));
+            else emu.memcard_format(s);
+          }
         }
-        postMessage({ type: 'booted', region: emu.disc_region() });
+        let resumed = false;
+        if (m.state) {
+          try {
+            emu.load_state(await gunzip(new Uint8Array(m.state.data), m.state.gz));
+            resumed = true;
+          } catch (err) {
+            postMessage({ type: 'error', message: 'Gagal memuat progres: ' + (err?.message || err) });
+          }
+        }
+        postMessage({ type: 'booted', region: emu.disc_region(), resumed });
         start();
+        break;
+      }
+      case 'saveState': {
+        flushCards();
+        const raw = emu.save_state();
+        const { data, gz } = await gzip(raw);
+        postMessage({ type: 'stateData', id: m.id, data, gz }, [data.buffer]);
+        break;
+      }
+      case 'loadState': {
+        try {
+          emu.load_state(await gunzip(new Uint8Array(m.data), m.gz));
+          postMessage({ type: 'stateLoaded', id: m.id, ok: true });
+        } catch (err) {
+          postMessage({ type: 'stateLoaded', id: m.id, ok: false, message: String(err?.message || err) });
+        }
+        kick();
         break;
       }
       case 'reset':

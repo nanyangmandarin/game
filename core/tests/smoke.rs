@@ -145,3 +145,50 @@ fn load_delay_slot_semantics() {
     assert_eq!(rd(0x208), 5, "value visible after delay slot");
     assert_eq!(rd(0x20C), 7, "write in delay slot overrides load");
 }
+
+#[test]
+fn save_state_roundtrip() {
+    let base = 0x8001_0000u32;
+    // counter loop: t1 += 1; store to 0x80000300
+    let c = vec![
+        lui(T0, 0x8000),
+        (0x09 << 26) | (T1 << 16) | (T1 << 21) | 1, // addiu t1,t1,1
+        sw(T1, 0x300, T0),
+        j(base + 4),
+        0,
+    ];
+    let mut a = Psx::new();
+    a.load_exe(&build_exe(&c, base)).unwrap();
+    for _ in 0..3 { a.run_frame(); }
+    let st = a.save_state();
+    for _ in 0..2 { a.run_frame(); }
+    let expect = a.bus.ram.clone();
+    let expect_pc = a.cpu.pc;
+
+    let mut b = Psx::new();
+    b.load_state(&st).unwrap();
+    for _ in 0..2 { b.run_frame(); }
+    assert_eq!(b.cpu.pc, expect_pc, "deterministic after state load");
+    assert!(b.bus.ram == expect, "RAM matches after resuming from state");
+    assert!(st.len() < 5 * 1024 * 1024, "state size {}", st.len());
+}
+
+/// Runs only when PS1_BIOS points to a BIOS image (not shipped with the repo).
+#[test]
+fn bios_state_roundtrip() {
+    let Ok(path) = std::env::var("PS1_BIOS") else { return };
+    let bios = std::fs::read(path).unwrap();
+    let mut a = Psx::new();
+    a.load_bios(&bios).unwrap();
+    for _ in 0..200 { a.run_frame(); }
+    let st = a.save_state();
+    for _ in 0..100 { a.run_frame(); }
+    let mut b = Psx::new();
+    b.load_bios(&bios).unwrap();
+    b.load_state(&st).unwrap();
+    for _ in 0..100 { b.run_frame(); }
+    assert_eq!(a.cpu.pc, b.cpu.pc);
+    assert!(a.bus.gpu.vram == b.bus.gpu.vram, "VRAM identical");
+    assert!(a.bus.ram == b.bus.ram, "RAM identical");
+    println!("state size: {} KB", st.len() / 1024);
+}

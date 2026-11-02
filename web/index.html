@@ -2,7 +2,10 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#171a21">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>PS1 Web Emulator</title>
   <meta name="description" content="Emulator PlayStation 1 berbasis WebAssembly yang berjalan langsung di browser.">
   <link rel="stylesheet" href="style.css">
@@ -11,7 +14,8 @@
   <header class="bar">
     <div class="brand">PS1<span>web</span></div>
     <nav>
-      <button id="btnOpen" class="primary" title="Buka ISO / BIN+CUE / EXE">Buka Game</button>
+      <button id="btnLibrary" class="primary" title="Daftar game tersimpan">🎮 Game Saya</button>
+      <button id="btnStates" disabled title="Save state (F5 simpan cepat, F8 muat cepat)">💾 State</button>
       <button id="btnPause" disabled title="Pause (P)">Pause</button>
       <button id="btnReset" disabled title="Reset (F3)">Reset</button>
       <button id="btnFF" disabled title="Fast-forward (tahan Tab)">⏩</button>
@@ -25,14 +29,28 @@
     <div id="screenHost"></div>
     <div id="overlay" class="hidden"></div>
     <div id="welcome">
-      <h1>PlayStation 1 di browser</h1>
-      <p>Emulator berjalan sepenuhnya di perangkat Anda (WebAssembly). Tidak ada file yang diunggah ke server.</p>
+      <div class="wel-head">
+        <h1>PlayStation 1 di browser</h1>
+        <button id="btnBackToGame" class="hidden">Kembali ke game ✕</button>
+      </div>
+      <div id="resume" class="resume hidden">
+        <img alt="">
+        <div><b id="resumeTitle"></b><small id="resumeTime"></small></div>
+        <button id="btnResume" class="primary">▶ Lanjutkan</button>
+      </div>
+      <section id="libSection">
+        <h2>Game Saya</h2>
+        <ul id="gameList" class="games"></ul>
+        <p id="storageInfo" class="hint"></p>
+      </section>
+      <div class="wel-actions"><button id="btnOpen" class="primary">+ Tambah / Buka Game…</button></div>
       <ol>
         <li id="stepBios"><b>BIOS:</b> <span id="biosStatus">belum ada</span> — <button id="btnBios" class="link">pilih file BIOS</button></li>
-        <li><b>Game:</b> klik <i>Buka Game</i> atau seret file ISO / BIN+CUE ke sini.</li>
+        <li><b>Game:</b> klik <i>Tambah / Buka Game</i> atau seret file ISO / BIN+CUE ke sini. Game disimpan di browser, jadi tetap ada setelah refresh.</li>
       </ol>
-      <p class="muted">BIOS (mis. SCPH-1001 / SCPH-5501 / SCPH-7502) harus diambil dari konsol milik Anda sendiri. Ukurannya 512 KB.</p>
+      <p class="muted">Semua berjalan di perangkat Anda (WebAssembly); tidak ada file yang diunggah ke server. BIOS (mis. SCPH-1001 / 5501 / 7502, 512 KB) harus diambil dari konsol milik Anda sendiri.</p>
     </div>
+    <div id="progress" class="hidden"><span></span><div><i></i></div></div>
     <div id="toast"></div>
   </main>
 
@@ -68,6 +86,8 @@
           </select></div>
         <div class="row"><label for="pauseOnBlur">Pause saat tab tidak aktif</label><input type="checkbox" id="pauseOnBlur" data-key="pauseOnBlur"></div>
         <div class="row"><label for="showFps">Tampilkan FPS / kecepatan</label><input type="checkbox" id="showFps" data-key="showFps"></div>
+        <div class="row"><label for="saveGames">Simpan game di penyimpanan browser (tetap ada setelah refresh)</label><input type="checkbox" id="saveGames" data-key="saveGames"></div>
+        <div class="row"><label for="autosave">Simpan progres otomatis (tiap 30 detik &amp; saat tab ditutup)</label><input type="checkbox" id="autosave" data-key="autosave"></div>
       </section>
 
       <section data-panel="graphics" class="panel">
@@ -120,6 +140,14 @@
         <div class="row"><label for="gamepadIndex">Gamepad fisik</label><select id="gamepadIndex"></select></div>
         <div class="row"><label for="deadzone">Deadzone stik</label><input type="range" id="deadzone" min="0" max="50" data-key="deadzone" data-num></div>
         <div class="row"><label for="rumble">Getar (rumble)</label><input type="checkbox" id="rumble" data-key="rumble"></div>
+        <h3 class="sub">Kontrol layar sentuh (HP / tablet)</h3>
+        <div class="row"><label for="touchMode">Tampilkan kontrol di layar</label>
+          <select id="touchMode" data-key="touchMode">
+            <option value="auto">Otomatis (perangkat sentuh)</option><option value="on">Selalu</option><option value="off">Mati</option>
+          </select></div>
+        <div class="row"><label for="touchOpacity">Transparansi tombol</label><input type="range" id="touchOpacity" min="15" max="100" data-key="touchOpacity" data-num></div>
+        <div class="row"><label for="touchStick">Stik analog di layar</label><input type="checkbox" id="touchStick" data-key="touchStick"></div>
+        <div class="row"><label for="touchHaptics">Getar saat tombol disentuh</label><input type="checkbox" id="touchHaptics" data-key="touchHaptics"></div>
         <p class="hint">Klik sebuah tombol lalu tekan tombol keyboard / gamepad yang diinginkan. Esc = kosongkan.</p>
         <table class="binds" id="bindTable">
           <thead><tr><th>Tombol PS1</th><th>Keyboard</th><th>Gamepad</th></tr></thead>
@@ -135,6 +163,19 @@
       <section data-panel="hotkeys" class="panel">
         <table class="binds" id="hotkeyTable"><thead><tr><th>Aksi</th><th>Tombol</th></tr></thead><tbody></tbody></table>
       </section>
+    </form>
+  </dialog>
+
+  <dialog id="statesDlg">
+    <form method="dialog" class="dlg">
+      <header>
+        <h2>Save State</h2>
+        <button value="close" class="icon" aria-label="Tutup">✕</button>
+      </header>
+      <div class="panel active">
+        <p class="hint">State menyimpan kondisi game persis saat ini (terpisah dari save memory card). Tersimpan di browser per game.</p>
+        <div id="stateGrid" class="state-grid"></div>
+      </div>
     </form>
   </dialog>
 

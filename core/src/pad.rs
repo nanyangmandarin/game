@@ -1,17 +1,20 @@
 //! SIO0: controllers (digital / DualShock) and memory cards.
 
+use serde::{Deserialize, Serialize};
+
 use std::collections::VecDeque;
 
 pub const MEMCARD_SIZE: usize = 128 * 1024;
 const ACK_DELAY: i32 = 450;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum PadType {
     None,
     Digital,
     DualShock,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Pad {
     pub kind: PadType,
     /// Bit set = pressed (converted to active-low on the wire).
@@ -147,7 +150,9 @@ impl Pad {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MemCard {
+    #[serde(skip)]
     pub data: Vec<u8>,
     pub present: bool,
     pub dirty: bool,
@@ -292,7 +297,7 @@ impl MemCard {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Serialize, Deserialize)]
 enum Dev {
     Idle,
     Pad,
@@ -300,6 +305,7 @@ enum Dev {
     Ignore,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Sio0 {
     pub pads: [Pad; 2],
     pub cards: [MemCard; 2],

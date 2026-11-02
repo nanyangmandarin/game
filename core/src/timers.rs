@@ -1,6 +1,8 @@
 //! Root counters (timers 0-2).
 
-#[derive(Clone, Copy, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 struct Timer {
     counter: u32,
     mode: u32,
@@ -10,6 +12,7 @@ struct Timer {
     fired: bool,    // one-shot irq already delivered
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Timers {
     t: [Timer; 3],
     in_hblank: bool,

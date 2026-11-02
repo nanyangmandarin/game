@@ -1,5 +1,7 @@
 //! CD-ROM controller, disc image access, CD-DA and XA-ADPCM audio.
 
+use serde::{Deserialize, Serialize};
+
 use std::collections::VecDeque;
 
 pub const SECTOR_RAW: usize = 2352;
@@ -13,7 +15,7 @@ pub trait DiscReader {
     fn read(&mut self, file: u32, offset: u64, buf: &mut [u8]) -> bool;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Track {
     pub number: u8,
     pub file: u32,
@@ -57,7 +59,7 @@ impl Disc {
     }
 
     /// Read a full raw sector; sectors stored as 2048 bytes get a synthesized header.
-    pub fn read_sector(&mut self, frame: u32, buf: &mut [u8; SECTOR_RAW]) -> bool {
+    pub fn read_sector(&mut self, frame: u32, buf: &mut [u8]) -> bool {
         let t = match self.track_at(frame) {
             Some(t) => t.clone(),
             None => {
@@ -107,19 +109,22 @@ impl Disc {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 struct Pending {
     delay: i32,
     int: u8,
     resp: Vec<u8>,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Serialize, Deserialize)]
 struct XaState {
     old: [i32; 2],
     older: [i32; 2],
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct CdRom {
+    #[serde(skip)]
     pub disc: Option<Disc>,
     index: u8,
     params: VecDeque<u8>,
@@ -139,7 +144,7 @@ pub struct CdRom {
     setloc_pending: bool,
     loc: u32,
     read_timer: i32,
-    sector: Box<[u8; SECTOR_RAW]>,
+    sector: Vec<u8>,
     last_header: [u8; 8],
     filter_file: u8,
     filter_chan: u8,
@@ -181,7 +186,7 @@ impl CdRom {
             setloc_pending: false,
             loc: 150,
             read_timer: 0,
-            sector: Box::new([0; SECTOR_RAW]),
+            sector: vec![0; SECTOR_RAW],
             last_header: [0; 8],
             filter_file: 0,
             filter_chan: 0,

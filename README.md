@@ -15,9 +15,10 @@ Emulator PlayStation 1 yang berjalan sepenuhnya di browser. Core ditulis dalam R
 | Kontroler digital & DualShock (analog + getar), 2 port | ✅ |
 | Memory card 2 slot (bersama / per game), impor/ekspor `.mcr`/`.gme`, kelola save | ✅ |
 | Timer, DMA, interrupt | ✅ |
-| Save state | ⏳ berikutnya |
+| Save state: 5 slot + quick save (F5/F8) + auto-save, dengan thumbnail | ✅ |
+| Game & progres tetap ada setelah refresh (OPFS + IndexedDB) | ✅ |
 | Format CHD / PBP | ⏳ berikutnya |
-| Kontrol layar sentuh (HP) | ⏳ berikutnya |
+| Kontrol layar sentuh (HP/tablet): multi-touch, D-pad, stik analog, haptic | ✅ |
 
 ### Renderer: dengan atau tanpa GPU
 
@@ -35,6 +36,17 @@ Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Audio memakai **Aud
 - **Kontroler:** jenis per port, pilih gamepad, deadzone, getar, remap keyboard & gamepad.
 - **Memory card:** mode per slot, daftar save (judul Shift-JIS), hapus save, impor/ekspor, format.
 - **Hotkey:** bisa diubah semua.
+
+## Tetap tersimpan setelah refresh
+
+- **Game** yang dibuka otomatis disalin ke penyimpanan browser (OPFS) dan muncul di **Game Saya**. Setelah refresh tidak perlu memilih file lagi.
+- **Progres** disimpan otomatis tiap 30 detik dan saat tab disembunyikan/ditutup. Tombol **Lanjutkan** membuka game persis di titik terakhir.
+- **Save state** manual: tombol 💾 State (5 slot + slot cepat F5/F8).
+- Bisa dimatikan di Pengaturan → Sistem. Menghapus data situs di browser juga menghapus game dan save yang tersimpan.
+
+## Di HP / tablet
+
+Kontrol layar sentuh muncul otomatis di perangkat sentuh (atur di Pengaturan → Kontroler). Mode potret: layar di atas, tombol di bawah. Mode lanskap: tombol di kiri-kanan gambar dan toolbar disembunyikan. Tombol ☰ ⏩ 💾 ↺ di layar untuk menu, fast-forward, quick save, dan quick load.
 
 ## Cara pakai
 
@@ -54,7 +66,7 @@ Emulasi berjalan di **Web Worker**, jadi UI tetap responsif. Audio memakai **Aud
 | Start / Select | Enter / Backspace | | L3 / R3 | Z / X |
 | Stik kiri | Panah | | Stik kanan | Numpad 8/4/2/6 |
 
-Hotkey: **P** pause, **Tab** (tahan) fast-forward, **F2** layar penuh, **F3** reset, **F4** toggle analog, **F9** screenshot, **Esc** menu. Gamepad standar (Xbox/PS/dll.) langsung terpetakan; tombol Home/Guide mengaktifkan mode analog.
+Hotkey: **P** pause, **F5** quick save, **F8** quick load, **Tab** (tahan) fast-forward, **F2** layar penuh, **F3** reset, **F4** toggle analog, **F9** screenshot, **Esc** menu. Gamepad standar (Xbox/PS/dll.) langsung terpetakan; tombol Home/Guide mengaktifkan mode analog.
 
 ## Build
 
