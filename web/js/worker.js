@@ -481,6 +481,9 @@ onmessage = async (e) => {
         postMessage({ type: 'cheatsApplied', errors, count: m.count || 0 });
         break;
       }
+      case 'diag':
+        postMessage({ type: 'cheatValid', id: m.id, error: emu.diagnostics() + `frames=${frameCount}\n` });
+        break;
       case 'validateCheats':
         postMessage({ type: 'cheatValid', id: m.id, error: m.list.map((t) => emu.validate_cheat(t)) });
         break;

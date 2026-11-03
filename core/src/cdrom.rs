@@ -102,6 +102,30 @@ impl Disc {
         Some(buf[off..off + 2048].to_vec())
     }
 
+    /// Disc structure checks for diagnostics (sync/mode of the first sectors, ISO9660, SYSTEM.CNF).
+    pub fn debug_report(&mut self) -> String {
+        let mut out = String::new();
+        let tr: Vec<String> = self
+            .tracks
+            .iter()
+            .map(|t| format!("#{} {} start={} len={} size={} off={}", t.number, if t.audio { "audio" } else { "data" }, t.start, t.length, t.sector_size, t.file_offset))
+            .collect();
+        out += &format!("tracks: {}\n", tr.join(" | "));
+        for lba in [0u32, 16] {
+            let mut b = [0u8; SECTOR_RAW];
+            let ok = self.read_sector(150 + lba, &mut b);
+            let sync = b[0] == 0 && b[1..11].iter().all(|&x| x == 0xFF) && b[11] == 0;
+            out += &format!(
+                "lba{}: read={} sync={} hdr={:02X}{:02X}{:02X} mode={} sub={:02X?} data24={:02X?}\n",
+                lba, ok, sync, b[12], b[13], b[14], b[15], &b[16..20], &b[24..32]
+            );
+        }
+        let pvd = self.data_sector(16);
+        out += &format!("iso9660: {}\n", pvd.as_ref().map(|p| &p[1..6] == b"CD001").unwrap_or(false));
+        out += &format!("serial: {:?}\n", self.serial());
+        out
+    }
+
     /// Game serial (e.g. "SLUS-01115") from the BOOT line of SYSTEM.CNF on the disc.
     pub fn serial(&mut self) -> Option<String> {
         let pvd = self.data_sector(16)?;
@@ -261,6 +285,14 @@ impl CdRom {
         let disc = self.disc.take();
         *self = CdRom::new();
         self.disc = disc;
+    }
+
+    /// One-line controller state for diagnostics.
+    pub fn debug_state(&self) -> String {
+        format!(
+            "motor={} reading={} playing={} mode={:02X} loc={} irq_flag={:02X} irq_en={:02X} queued={}",
+            self.motor, self.reading, self.playing, self.mode, self.loc, self.irq_flag, self.irq_enable, self.queue.len()
+        )
     }
 
     /// Report an opened lid on the next status read (disc swap).

@@ -424,6 +424,26 @@ impl Emulator {
         r
     }
 
+    /// Human-readable diagnostics for bug reports.
+    pub fn diagnostics(&mut self) -> String {
+        let p = &mut self.psx;
+        let mut s = String::new();
+        s += &format!("pc={:08X} sr={:08X} bios_loaded={} fast_boot={}\n", p.cpu.pc, p.cpu.sr, p.bios_loaded, p.fast_boot);
+        s += &format!("i_stat={:03X} i_mask={:03X} cycles={}\n", p.bus.i_stat, p.bus.i_mask, p.bus.cycles);
+        let g = &p.bus.gpu;
+        let (w, h) = g.display_size();
+        s += &format!(
+            "gpu: disp_on={} {}x{} at ({},{}) depth24={} interlace={} pal={} threaded={}\n",
+            g.disp_on, w, h, g.disp_x, g.disp_y, g.depth24, g.interlace, g.pal, g.threaded
+        );
+        s += &format!("cdrom: {}\n", p.bus.cd.debug_state());
+        match p.bus.cd.disc.as_mut() {
+            Some(d) => s += &d.debug_report(),
+            None => s += "disc: none\n",
+        }
+        s
+    }
+
     /// Display description for GPU-side presentation: [x, y, width, height, depth24, enabled].
     pub fn display_info(&self) -> Vec<u32> {
         let g = &self.psx.bus.gpu;

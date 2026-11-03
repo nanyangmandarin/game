@@ -326,3 +326,4 @@ body.rewinding #stage::before {
 .cheat-db .btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .cheat-db input, #cheatFilter { width: 100%; margin-top: 8px; }
 ul.cheats li[style*="none"] { display: none !important; }
+#diagText { width: 100%; font: 12px/1.4 ui-monospace, monospace; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 6px; }

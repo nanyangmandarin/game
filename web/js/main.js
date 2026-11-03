@@ -1072,6 +1072,27 @@ function renderHotkeys() {
   }
 }
 
+// ---------------- diagnostics report ----------------
+$('#btnDiag').onclick = async () => {
+  const core = running ? await request({ type: 'diag' }) : '(belum ada game yang berjalan)\n';
+  const v = $('#appVersion').textContent || '';
+  const files = currentMeta ? (lastFiles || []).map((f) => `${f.name} (${f.size} B)`).join(', ') : '-';
+  const st = lastStats ? `${lastStats.fps.toFixed(1)} fps, ${Math.round(lastStats.speed)}%, emu ${lastStats.emuMs.toFixed(1)} ms` : '-';
+  const txt = [
+    `== PS1 Web Emulator diagnostik ==`, v, `browser: ${navigator.userAgent}`,
+    `isolated=${crossOriginIsolated} threaded=${gpuThreaded} renderer=${presenter.mode}${presenter.hd ? ' ' + presenter.hd + 'x' : ''} fastBoot=${settings.fastBoot}`,
+    `bios: ${biosName || '-'}`,
+    `game: ${currentMeta ? currentMeta.title : '-'} container=${currentMeta?.container || 'bin/iso'} serial=${gameSerial || '-'}`,
+    `files: ${files}`, `stats: ${st}`, '', core,
+  ].join('\n');
+  $('#diagText').value = txt;
+  $('#diagBox').classList.remove('hidden');
+};
+$('#btnDiagCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('#diagText').value); toast('Laporan disalin. Tempel (paste) ke chat.'); }
+  catch { $('#diagText').select(); document.execCommand('copy'); toast('Laporan disalin.'); }
+};
+
 // ---------------- version (helps confirm an update reached the device) ----------------
 fetch('version.json', { cache: 'no-store' }).then((r) => r.json()).then((v) => {
   $('#appVersion').textContent = `Versi aplikasi: ${v.version} (${v.date})`;
